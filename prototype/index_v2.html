@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI智参（药食同源）平台 - 全量交互原型</title>
+<style>
+:root{
+  --bg:#f4f7fb;--panel:#fff;--ink:#172033;--muted:#667085;--line:#e7ecf3;
+  --brand:#16a085;--brand2:#0f7d69;--cyan:#18a7b8;--purple:#7c5ce7;--orange:#f59e0b;
+  --red:#e05252;--green:#22a06b;--shadow:0 12px 32px rgba(31,45,61,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+.app{min-height:100vh;display:grid;grid-template-columns:250px 1fr}
+.sidebar{position:sticky;top:0;height:100vh;background:#0f1f2d;color:#dbe7ee;padding:20px 14px;overflow:auto}
+.logo{display:flex;gap:11px;align-items:center;padding:3px 8px 22px;border-bottom:1px solid rgba(255,255,255,.08)}
+.logo-mark{width:39px;height:39px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,#2cd7af,#14a88b);color:white;font-weight:900;box-shadow:0 8px 18px rgba(22,160,133,.28)}
+.logo b{display:block;color:#fff;font-size:17px}.logo small{font-size:11px;color:#91a6b5}
+.nav-title{font-size:11px;color:#718a9b;margin:20px 12px 8px;text-transform:uppercase;letter-spacing:.12em}
+.nav a{display:flex;align-items:center;gap:11px;text-decoration:none;color:#b9c8d3;padding:10px 12px;border-radius:11px;margin:3px 0;font-size:14px}
+.nav a:hover,.nav a.active{background:rgba(42,213,173,.12);color:#fff}
+.nav .ico{width:22px;text-align:center}
+.main{min-width:0}
+.topbar{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.page-title{font-weight:800}.top-actions{display:flex;align-items:center;gap:10px}.role-switch{display:flex;background:#f0f3f7;border-radius:10px;padding:3px}
+.role-switch button{border:0;background:transparent;padding:7px 12px;border-radius:8px;color:var(--muted)}
+.role-switch button.active{background:#fff;color:var(--brand2);box-shadow:0 2px 7px rgba(0,0,0,.08)}
+.avatar-mini{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#dff5ef;color:var(--brand2);font-weight:800}
+.content{padding:24px;max-width:1540px;margin:auto}
+.screen{display:none}.screen.active{display:block}
+.hero{display:grid;grid-template-columns:1.45fr .8fr;gap:18px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.hero-main{padding:26px;position:relative;overflow:hidden;background:linear-gradient(135deg,#f7fffc,#edf9f6)}
+.hero-main:after{content:"";position:absolute;width:260px;height:260px;border-radius:50%;right:-70px;top:-100px;background:radial-gradient(circle,rgba(24,167,184,.18),transparent 68%)}
+.eyebrow{display:inline-flex;gap:7px;align-items:center;font-size:12px;color:var(--brand2);background:#dff7ef;padding:6px 9px;border-radius:999px;font-weight:700}
+h1{font-size:29px;margin:13px 0 8px}h2{font-size:19px;margin:0}h3{font-size:15px;margin:0}
+.desc{color:var(--muted);line-height:1.75;font-size:14px}
+.hero-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 14px;border-radius:10px}
+.btn.primary{background:var(--brand);color:white;border-color:var(--brand)}.btn.dark{background:#162a39;color:white;border-color:#162a39}.btn.ghost{background:transparent}
+.digital-human{padding:22px;display:grid;grid-template-columns:120px 1fr;gap:18px;align-items:center}
+.dh-portrait{width:112px;height:132px;border-radius:60px 60px 42px 42px;background:linear-gradient(180deg,#effffc,#cdeee5);position:relative;display:grid;place-items:center;box-shadow:inset 0 0 0 6px white}
+.dh-face{width:72px;height:78px;border-radius:48% 48% 45% 45%;background:#f4d4bd;position:relative}
+.dh-face:before{content:"";position:absolute;width:76px;height:33px;background:#243b4c;border-radius:40px 40px 18px 18px;left:-2px;top:-8px}
+.eye{position:absolute;top:35px;width:5px;height:5px;border-radius:50%;background:#27313a}.eye.l{left:20px}.eye.r{right:20px}
+.mouth{position:absolute;left:29px;top:56px;width:14px;height:6px;border-bottom:2px solid #a45f61;border-radius:50%}
+.wave{display:flex;gap:3px;align-items:center;height:24px;margin:8px 0}.wave i{display:block;width:3px;background:var(--brand);border-radius:3px;animation:wave 1.2s infinite ease-in-out}.wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.2s}.wave i:nth-child(4){animation-delay:.3s}.wave i:nth-child(5){animation-delay:.4s}
+@keyframes wave{0%,100%{height:5px}50%{height:22px}}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.kpi{padding:18px}.kpi .num{font-size:28px;font-weight:900;margin:8px 0 3px}.kpi .trend{font-size:12px;color:var(--green)}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px}
+.quick{padding:18px;transition:.2s}.quick:hover{transform:translateY(-2px);box-shadow:0 15px 35px rgba(31,45,61,.12)}.quick .qicon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#ecf9f5;font-size:20px;margin-bottom:12px}.quick p{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:0}
+.badge{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:11px;background:#eef2f6;color:#586274}.badge.green{background:#e6f8f0;color:#187a57}.badge.red{background:#feeeee;color:#b63d3d}.badge.orange{background:#fff4dc;color:#a46a00}
+.agent-card{padding:18px}.agent-top{display:flex;gap:12px;align-items:center}.agent-icon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font-size:20px;background:#eef9f5}.agent-meta{margin-left:auto}.agent-card ul{padding-left:18px;color:var(--muted);font-size:12px;line-height:1.8;margin-bottom:0}
+.layout{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.panel{padding:20px}
+.health-score{display:flex;gap:22px;align-items:center}.ring{width:126px;height:126px;border-radius:50%;background:conic-gradient(var(--brand) 0 72%,#e8eef1 72%);display:grid;place-items:center;position:relative}.ring:after{content:"";position:absolute;inset:11px;background:#fff;border-radius:50%}.ring strong{z-index:1;font-size:30px}.metric-list{flex:1}.metric{margin:10px 0}.metric-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}.bar{height:8px;background:#eef2f5;border-radius:10px;overflow:hidden}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--cyan));border-radius:10px}
+.risk-list{display:grid;gap:9px}.risk-item{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid var(--line);border-radius:12px;background:#fbfcfd}.risk-dot{width:9px;height:9px;border-radius:50%;background:var(--orange)}.risk-dot.high{background:var(--red)}.risk-dot.low{background:var(--green)}
+.flow{display:flex;gap:8px;align-items:center;overflow:auto;padding-bottom:5px}.flow .step{min-width:124px;padding:12px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;font-size:12px;text-align:center}.flow .arrow{color:#9ca9b5}
+.chat-layout{display:grid;grid-template-columns:240px 1fr 330px;gap:14px;min-height:620px}.contacts,.chat,.advisor{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}.box-head{padding:15px 16px;border-bottom:1px solid var(--line);font-weight:800}.contact{padding:12px 14px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #f0f3f6}.contact.active{background:#effaf6}.bubble-wrap{padding:18px;height:475px;overflow:auto;background:#fbfcfd}.bubble{max-width:72%;padding:11px 13px;border-radius:14px;margin:9px 0;font-size:13px;line-height:1.6}.bubble.ai{background:#fff;border:1px solid var(--line)}.bubble.user{background:#dff5ed;margin-left:auto}.chat-input{padding:12px;border-top:1px solid var(--line);display:flex;gap:8px}.chat-input input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px}
+.advisor .body{padding:14px}.context-card{padding:12px;background:#f8fafb;border-radius:12px;margin-bottom:10px;font-size:12px;line-height:1.6}.suggestion{padding:12px;border:1px solid #cdece2;background:#f4fdfa;border-radius:12px;font-size:12px;line-height:1.7}
+.assessment{display:grid;grid-template-columns:320px 1fr;gap:16px}.assess-nav{padding:18px}.assess-stage{padding:18px}.stage-item{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}.stage-no{width:25px;height:25px;border-radius:50%;display:grid;place-items:center;background:#edf2f6;font-size:11px}.stage-item.done .stage-no{background:#daf4eb;color:var(--brand2)}.stage-item.active .stage-no{background:var(--brand);color:#fff}
+.upload{border:1.5px dashed #a6d8ca;border-radius:16px;padding:32px;text-align:center;background:#f8fffc}.upload .cam{font-size:42px}.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.field label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+.report-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.report-box{padding:15px;border:1px solid var(--line);border-radius:13px;background:#fbfcfd}.report-box h4{font-size:13px;margin:0 0 8px}.tag{display:inline-flex;padding:5px 8px;border-radius:8px;background:#ecf8f4;color:var(--brand2);font-size:11px;margin:3px}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{border:1px solid var(--line);border-radius:12px;padding:9px;min-height:90px;background:#fff;font-size:11px}.day b{display:block;margin-bottom:8px}.food{padding:5px 6px;background:#eef8f5;border-radius:7px;margin:4px 0}
+.scene-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.scene{padding:17px}.scene .icon{font-size:26px;margin-bottom:10px}.scene p{font-size:12px;color:var(--muted);line-height:1.6}
+.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}.table th{color:#667085;background:#f8fafc}
+.chart{height:230px;display:flex;align-items:end;gap:14px;padding:24px 16px 10px;border-bottom:1px solid var(--line)}.chart .col{flex:1;background:linear-gradient(180deg,#5bcfb2,#16a085);border-radius:8px 8px 2px 2px;min-width:30px;position:relative}.chart .col span{position:absolute;bottom:-26px;width:100%;text-align:center;font-size:10px;color:var(--muted)}
+.text2sql{display:grid;grid-template-columns:260px 1fr;gap:14px}.query-list{padding:14px}.query-item{padding:12px;border-bottom:1px solid var(--line);font-size:12px}.query-item.active{background:#f0faf7;border-radius:10px}.query-main{padding:18px}.query-box{display:flex;gap:8px}.query-box input{flex:1;border:1px solid var(--line);padding:12px;border-radius:10px}.sql{margin-top:12px;background:#132431;color:#bce7db;padding:13px;border-radius:11px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap}.result3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:14px}.mini-panel{border:1px solid var(--line);border-radius:13px;padding:13px;min-width:0}.mini-chart{height:160px;display:flex;align-items:end;gap:7px}.mini-chart i{flex:1;background:#82d5c0;border-radius:6px 6px 1px 1px}
+.dashboard-builder{display:grid;grid-template-columns:210px 1fr 250px;gap:12px}.component-lib,.properties{padding:14px}.component{padding:10px;border:1px solid var(--line);border-radius:10px;margin:8px 0;font-size:12px;background:#fff}.canvas{padding:14px;min-height:540px;background:#0d1722;border-radius:16px;color:#eaf3f8;display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:120px;gap:10px}.widget{background:#142433;border:1px solid #244052;border-radius:12px;padding:13px;overflow:hidden}.widget.k1{grid-column:span 3}.widget.k2{grid-column:span 3}.widget.k3{grid-column:span 3}.widget.k4{grid-column:span 3}.widget.wide{grid-column:span 8;grid-row:span 2}.widget.side{grid-column:span 4;grid-row:span 2}.widget strong{font-size:26px}.prop{margin:12px 0}.prop label{font-size:11px;color:var(--muted)}.prop select,.prop input{width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:8px}
+.toast{position:fixed;right:24px;bottom:24px;background:#152631;color:#fff;padding:12px 16px;border-radius:11px;box-shadow:var(--shadow);display:none;z-index:50;font-size:13px}
+.modal{position:fixed;inset:0;background:rgba(10,20,30,.44);display:none;place-items:center;z-index:60;padding:20px}.modal.open{display:grid}.modal-card{background:#fff;border-radius:18px;max-width:720px;width:100%;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.25)}.modal-head{display:flex;justify-content:space-between;align-items:center}.close{border:0;background:#f1f4f6;border-radius:9px;width:32px;height:32px}
+.note{padding:12px 14px;background:#fff9e8;border:1px solid #f6dfa2;border-radius:12px;font-size:12px;color:#7b5b11;line-height:1.6}
+@media(max-width:1100px){.app{grid-template-columns:76px 1fr}.sidebar{padding:18px 8px}.logo div:last-child,.nav-title,.nav a span:not(.ico){display:none}.nav a{justify-content:center}.hero,.layout,.assessment,.text2sql{grid-template-columns:1fr}.grid4{grid-template-columns:repeat(2,1fr)}.grid3{grid-template-columns:1fr 1fr}.scene-cards{grid-template-columns:repeat(2,1fr)}.chat-layout{grid-template-columns:1fr}.contacts,.advisor{display:none}.result3{grid-template-columns:1fr}.dashboard-builder{grid-template-columns:1fr}.component-lib,.properties{display:none}}
+@media(max-width:680px){.content{padding:14px}.topbar{padding:0 14px}.grid4,.grid3,.grid2,.form-grid,.report-grid{grid-template-columns:1fr}.hero{grid-template-columns:1fr}.digital-human{grid-template-columns:90px 1fr}.dh-portrait{width:84px;height:105px}.scene-cards{grid-template-columns:1fr}.role-switch{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo"><div class="logo-mark">智</div><div><b>AI智参</b><small>药食同源智能健康平台</small></div></div>
+    <div class="nav-title">用户端</div>
+    <nav class="nav">
+      <a class="active" data-screen="home"><span class="ico">⌂</span><span>健康首页</span></a>
+      <a data-screen="assessment"><span class="ico">◎</span><span>健康风险测评</span></a>
+      <a data-screen="nutrition"><span class="ico">✦</span><span>营养师智能体</span></a>
+      <a data-screen="diet"><span class="ico">◫</span><span>食养食疗计划</span></a>
+      <a data-screen="scenes"><span class="ico">◇</span><span>五大健康场景</span></a>
+      <a data-screen="data"><span class="ico">▥</span><span>个人数据分析</span></a>
+    </nav>
+    <div class="nav-title">专业端 / 管理端</div>
+    <nav class="nav">
+      <a data-screen="dietitian"><span class="ico">♙</span><span>营养师工作台</span></a>
+      <a data-screen="analytics"><span class="ico">⌁</span><span>Text2SQL智能分析</span></a>
+      <a data-screen="admin"><span class="ico">▦</span><span>运营可视化大屏</span></a>
+      <a data-screen="agents"><span class="ico">⚙</span><span>智能体中心</span></a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div><div class="page-title" id="pageTitle">健康首页</div><div style="font-size:11px;color:var(--muted);margin-top:3px">AI智参 · 智能食养健康服务</div></div>
+      <div class="top-actions">
+        <div class="role-switch">
+          <button class="active">普通用户</button><button>营养师</button><button>管理员</button>
+        </div>
+        <button class="btn" onclick="toast('已打开消息中心')">🔔 3</button>
+        <div class="avatar-mini">李</div>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="screen active" id="home">
+        <div class="hero">
+          <div class="card hero-main">
+            <span class="eyebrow">● AI健康管家在线</span>
+            <h1>下午好，李女士</h1>
+            <div class="desc">结合您的健康档案、体质测评、营养测评与近期打卡数据，为您持续生成个性化食养建议与风险提醒。</div>
+            <div class="hero-actions">
+              <button class="btn primary" onclick="go('assessment')">开始健康风险测评</button>
+              <button class="btn" onclick="go('nutrition')">咨询AI营养师</button>
+              <button class="btn" onclick="go('diet')">查看本周食养计划</button>
+            </div>
+          </div>
+          <div class="card digital-human">
+            <div class="dh-portrait"><div class="dh-face"><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div></div>
+            <div>
+              <span class="badge green">数字人助手 · 小智</span>
+              <h3 style="margin-top:8px">“我可以语音陪您做测评，也可以解读健康报告。”</h3>
+              <div class="wave"><i></i><i></i><i></i><i></i><i></i></div>
+              <button class="btn primary" onclick="openDigitalHuman()">🎙 开始语音对话</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid4">
+          <div class="card kpi"><span class="badge">健康综合指数</span><div class="num">72</div><div class="trend">↑ 较上次 +4</div></div>
+          <div class="card kpi"><span class="badge">本周打卡</span><div class="num">5 / 7</div><div class="trend">完成率 71%</div></div>
+          <div class="card kpi"><span class="badge">待关注风险</span><div class="num">3</div><div style="font-size:12px;color:var(--orange)">血糖 · 睡眠 · 盐摄入</div></div>
+          <div class="card kpi"><span class="badge">食养计划</span><div class="num">第 3 周</div><div class="trend">今日计划已生成</div></div>
+        </div>
+
+        <div class="section-head"><h2>核心服务</h2><span class="desc">围绕“测评 → 方案 → 执行 → 复查 → 再评估”闭环</span></div>
+        <div class="grid4">
+          <div class="card quick" onclick="go('assessment')"><div class="qicon">🩺</div><h3>健康风险测评</h3><p>舌象、营养问卷、慢病指标、OCR体检报告联合评估。</p></div>
+          <div class="card quick" onclick="go('nutrition')"><div class="qicon">💬</div><h3>营养师智能体</h3><p>结合个人档案回答营养、食材、慢病饮食与药食同源问题。</p></div>
+          <div class="card quick" onclick="go('diet')"><div class="qicon">🥗</div><h3>食养食疗中心</h3><p>自动生成周/月计划、每日菜谱、功效说明与采购清单。</p></div>
+          <div class="card quick" onclick="go('data')"><div class="qicon">📊</div><h3>个人数据分析</h3><p>查看测评趋势、营养素摄入、打卡记录与AI解读。</p></div>
+        </div>
+
+        <div class="section-head"><h2>今日风险提醒</h2><button class="btn" onclick="go('assessment')">查看完整报告</button></div>
+        <div class="layout">
+          <div class="card panel">
+            <div class="health-score">
+              <div class="ring"><strong>72</strong></div>
+              <div class="metric-list">
+                <div class="metric"><div class="metric-head"><span>营养均衡</span><b>78</b></div><div class="bar"><span style="width:78%"></span></div></div>
+                <div class="metric"><div class="metric-head"><span>慢病风险控制</span><b>64</b></div><div class="bar"><span style="width:64%"></span></div></div>
+                <div class="metric"><div class="metric-head"><span>食养执行度</span><b>71</b></div><div class="bar"><span style="width:71%"></span></div></div>
+                <div class="metric"><div class="metric-head"><span>睡眠与作息</span><b>69</b></div><div class="bar"><span style="width:69%"></span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card panel">
+            <div class="risk-list">
+              <div class="risk-item"><i class="risk-dot high"></i><div><b>餐后血糖波动</b><div class="desc">建议结合复查数据持续观察</div></div><span class="badge red" style="margin-left:auto">高关注</span></div>
+              <div class="risk-item"><i class="risk-dot"></i><div><b>钠摄入偏高</b><div class="desc">本周外卖频次较多</div></div><span class="badge orange" style="margin-left:auto">中关注</span></div>
+              <div class="risk-item"><i class="risk-dot low"></i><div><b>蔬菜摄入改善</b><div class="desc">连续5天达到计划目标</div></div><span class="badge green" style="margin-left:auto">良好</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:14px">本原型中的风险分数与样例数据仅用于交互演示，不构成医疗诊断或用药建议。</div>
+      </section>
+
+      <section class="screen" id="assessment">
+        <div class="section-head"><div><h2>健康风险测评智能体</h2><div class="desc">舌象体质 + 营养问卷 + 慢病指标 + OCR体检报告</div></div><span class="badge green">健康测评智能体 · 在线</span></div>
+        <div class="assessment">
+          <div class="card assess-nav">
+            <h3>测评流程</h3>
+            <div class="stage-item done"><span class="stage-no">✓</span><div><b>基础健康档案</b><div class="desc">年龄 / 身高 / 体重 / 病史</div></div></div>
+            <div class="stage-item active"><span class="stage-no">2</span><div><b>舌象体质测评</b><div class="desc">AI识别体质特征</div></div></div>
+            <div class="stage-item"><span class="stage-no">3</span><div><b>营养风险问卷</b><div class="desc">动态权重评分</div></div></div>
+            <div class="stage-item"><span class="stage-no">4</span><div><b>OCR报告解析</b><div class="desc">提取体检指标异常项</div></div></div>
+            <div class="stage-item"><span class="stage-no">5</span><div><b>AI综合报告</b><div class="desc">风险 + 食养调理方向</div></div></div>
+            <button class="btn primary" style="width:100%;margin-top:18px" onclick="generateReport()">生成综合测评报告</button>
+          </div>
+          <div class="card assess-stage">
+            <div style="display:flex;justify-content:space-between;align-items:center"><div><span class="badge">步骤 2 / 5</span><h2 style="margin-top:8px">上传舌象图片</h2></div><button class="btn" onclick="toast('已打开历史测评记录')">历史测评</button></div>
+            <p class="desc">请在自然光环境下拍摄清晰舌象，系统将调用健康测评智能体进行体质特征识别。</p>
+            <div class="upload" onclick="simulateUpload()"><div class="cam">📷</div><b id="uploadText">点击拍照或从相册选择</b><div class="desc">支持 JPG / PNG，建议正面、清晰、无遮挡</div><div style="margin-top:12px"><button class="btn primary">拍照</button> <button class="btn">相册选择</button></div></div>
+            <div class="section-head"><h3>补充信息</h3><span class="badge">自动写入健康档案</span></div>
+            <div class="form-grid">
+              <div class="field"><label>年龄</label><input value="38"></div>
+              <div class="field"><label>近期睡眠</label><select><option>一般（6-7小时）</option><option>较好</option><option>较差</option></select></div>
+              <div class="field"><label>慢病情况</label><select><option>血糖偏高</option><option>高血压</option><option>无</option></select></div>
+              <div class="field"><label>饮食偏好</label><input value="清淡，偶尔外卖"></div>
+              <div class="field" style="grid-column:1/-1"><label>食物过敏 / 忌口</label><textarea rows="2">海鲜轻度过敏</textarea></div>
+            </div>
+            <div class="hero-actions"><button class="btn primary" onclick="simulateAssess()">提交并进行AI分析</button><button class="btn">保存稍后继续</button></div>
+            <div id="assessResult" style="display:none;margin-top:18px">
+              <div class="report-grid">
+                <div class="report-box"><h4>体质倾向</h4><b style="font-size:22px">痰湿倾向</b><div class="desc">结合舌象与问卷信息综合识别</div></div>
+                <div class="report-box"><h4>风险等级</h4><span class="badge orange">中度关注</span><div class="desc">建议结合体检数据继续观察</div></div>
+                <div class="report-box"><h4>调理方向</h4><span class="tag">控糖</span><span class="tag">少盐</span><span class="tag">增加膳食纤维</span></div>
+                <div class="report-box"><h4>建议下一步</h4><button class="btn primary" onclick="go('diet')">生成食养计划</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="section-head"><h2>智能体处理链路</h2></div>
+        <div class="card panel"><div class="flow"><div class="step">舌象/问卷/OCR输入</div><div class="arrow">→</div><div class="step">健康档案上下文</div><div class="arrow">→</div><div class="step">健康测评智能体</div><div class="arrow">→</div><div class="step">营养测评小模型</div><div class="arrow">→</div><div class="step">健康风险小模型</div><div class="arrow">→</div><div class="step">综合报告</div><div class="arrow">→</div><div class="step">食养计划</div></div></div>
+      </section>
+
+      <section class="screen" id="nutrition">
+        <div class="section-head"><div><h2>营养师智能体</h2><div class="desc">结合用户健康档案、膳食指南与药食同源知识库进行个性化咨询</div></div><div><span class="badge green">AI咨询</span> <span class="badge">可切人工营养师</span></div></div>
+        <div class="chat-layout">
+          <div class="contacts">
+            <div class="box-head">咨询记录</div>
+            <div class="contact active"><div class="avatar-mini">AI</div><div><b>AI营养师</b><div class="desc">当前会话</div></div></div>
+            <div class="contact"><div class="avatar-mini">王</div><div><b>王营养师</b><div class="desc">昨天 · 孕期营养</div></div></div>
+            <div class="contact"><div class="avatar-mini">刘</div><div><b>刘营养师</b><div class="desc">08/18 · 控糖饮食</div></div></div>
+          </div>
+          <div class="chat">
+            <div class="box-head" style="display:flex;justify-content:space-between"><span>AI智能咨询</span><button class="btn" onclick="toast('已切换至人工营养师咨询模式')">切换人工咨询</button></div>
+            <div class="bubble-wrap" id="chatBox">
+              <div class="bubble ai"><b>AI营养师：</b><br>您好，我已读取您的近期测评结果与食养记录。您今天想咨询饮食、食材、慢病饮食还是药食同源调理方向？</div>
+              <div class="bubble user">我最近午餐经常点外卖，怎么吃更适合控糖？</div>
+              <div class="bubble ai"><b>AI营养师：</b><br>从您当前档案看，建议优先选择“高纤维主食 + 足量蔬菜 + 适量优质蛋白”的组合，少选勾芡、糖醋、甜饮和大份精制主食。点单时可以备注少油、少盐、酱汁分装。<br><br><span class="badge">引用：近期营养测评</span> <span class="badge">引用：个人饮食偏好</span></div>
+            </div>
+            <div class="chat-input"><button class="btn" onclick="toast('可上传菜品/病历图片')">＋</button><button class="btn" onclick="openDigitalHuman()">🎙</button><input id="chatInput" placeholder="输入营养、食材、食疗问题..."><button class="btn primary" onclick="sendChat()">发送</button></div>
+          </div>
+          <div class="advisor">
+            <div class="box-head">当前健康上下文</div>
+            <div class="body">
+              <div class="context-card"><b>体质测评</b><br>痰湿倾向 · 中度关注</div>
+              <div class="context-card"><b>重点风险</b><br>餐后血糖波动、钠摄入偏高</div>
+              <div class="context-card"><b>过敏 / 忌口</b><br>海鲜轻度过敏</div>
+              <div class="suggestion"><b>AI建议方向</b><br>① 控糖点餐策略<br>② 外卖低钠选择<br>③ 增加蔬菜及全谷物<br>④ 如涉及诊断、用药问题，转执业医师</div>
+              <button class="btn primary" style="width:100%;margin-top:12px" onclick="go('diet')">基于本次咨询生成食养计划</button>
+            </div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:14px">营养师智能体用于营养与食养辅助，不提供医疗诊断、处方或用药建议；相关问题应由执业医师处理。</div>
+      </section>
+
+      <section class="screen" id="diet">
+        <div class="section-head"><div><h2>食养食疗计划</h2><div class="desc">健康档案 + 体质测评 + 营养测评 + 慢病 + 过敏忌口 + 季节时令</div></div><div><button class="btn">月计划</button> <button class="btn primary">周计划</button></div></div>
+        <div class="grid3">
+          <div class="card kpi"><span class="badge">本周执行率</span><div class="num">71%</div><div class="trend">5天已打卡</div></div>
+          <div class="card kpi"><span class="badge">推荐能量范围</span><div class="num">1650</div><div class="desc">kcal / 日（原型示意）</div></div>
+          <div class="card kpi"><span class="badge">采购清单</span><div class="num">18项</div><button class="btn" onclick="toast('已生成食材采购清单')">生成采购清单</button></div>
+        </div>
+        <div class="section-head"><h2>本周健康饮食日历</h2><button class="btn primary" onclick="toast('今日已完成打卡')">今日打卡</button></div>
+        <div class="card panel">
+          <div class="calendar">
+            <div class="day"><b>周一</b><div class="food">燕麦鸡蛋</div><div class="food">杂粮饭+鸡胸</div><div class="food">冬瓜菌菇汤</div></div>
+            <div class="day"><b>周二</b><div class="food">山药小米粥</div><div class="food">藜麦牛肉</div><div class="food">芹菜豆腐</div></div>
+            <div class="day"><b>周三</b><div class="food">全麦三明治</div><div class="food">糙米鱼香茄子</div><div class="food">莲藕排骨汤</div></div>
+            <div class="day" style="border-color:#54c9ad"><b>周四 · 今天</b><div class="food">玉米鸡蛋</div><div class="food">荞麦面+时蔬</div><div class="food">冬瓜薏米汤</div></div>
+            <div class="day"><b>周五</b><div class="food">豆浆全麦包</div><div class="food">杂粮饭+牛肉</div><div class="food">菌菇豆腐汤</div></div>
+            <div class="day"><b>周六</b><div class="food">南瓜燕麦</div><div class="food">家庭健康餐</div><div class="food">清蒸鱼</div></div>
+            <div class="day"><b>周日</b><div class="food">红豆小米粥</div><div class="food">轻食套餐</div><div class="food">山药炖鸡</div></div>
+          </div>
+        </div>
+        <div class="section-head"><h2>今日菜品详情</h2></div>
+        <div class="grid3">
+          <div class="card quick"><div class="qicon">🌽</div><h3>玉米鸡蛋早餐</h3><p>营养重点：优质蛋白 + 粗粮。<br>食养方向：控制精制碳水比例。</p></div>
+          <div class="card quick"><div class="qicon">🍜</div><h3>荞麦面 + 时蔬</h3><p>营养重点：增加膳食纤维。<br>点餐建议：少酱、少盐。</p></div>
+          <div class="card quick"><div class="qicon">🥣</div><h3>冬瓜薏米汤</h3><p>药食同源说明与禁忌人群可展开查看，内容应由知识库与专业审核规则约束。</p></div>
+        </div>
+      </section>
+
+      <section class="screen" id="scenes">
+        <div class="section-head"><div><h2>五大健康业务场景</h2><div class="desc">覆盖家庭、慢病、社交宴请、妇幼与旅行真实生活环境</div></div></div>
+        <div class="scene-cards">
+          <div class="card scene"><div class="icon">🏠</div><h3>健康饮食管家</h3><p>家庭食养、团队食养、外卖智订、健康饮品，支持多成员统一规划。</p><button class="btn">进入</button></div>
+          <div class="card scene"><div class="icon">❤️</div><h3>慢病管理专家</h3><p>慢病分类档案、风险阈值、禁忌提醒、周期食养方案与打卡跟踪。</p><button class="btn">进入</button></div>
+          <div class="card scene"><div class="icon">🍽️</div><h3>社交宴请助手</h3><p>录入宾客慢病、过敏和体质，智能荐菜并标识风险，支持协同编辑。</p><button class="btn" onclick="toast('已创建健康宴请菜单草稿')">新建宴请</button></div>
+          <div class="card scene"><div class="icon">👶</div><h3>妇幼健康守护</h3><p>孕期、产后、婴幼儿专项测评与分阶段饮食指导，纳入家庭计划。</p><button class="btn">进入</button></div>
+          <div class="card scene"><div class="icon">🧳</div><h3>旅行美食智荐</h3><p>出行前健康评估、目的地健康餐厅/美食推荐与途中饮食提醒。</p><button class="btn">规划旅行</button></div>
+        </div>
+        <div class="section-head"><h2>场景联动流程</h2></div>
+        <div class="card panel"><div class="flow"><div class="step">健康档案</div><div class="arrow">→</div><div class="step">场景条件</div><div class="arrow">→</div><div class="step">智能荐菜智能体</div><div class="arrow">→</div><div class="step">营养/过敏校验</div><div class="arrow">→</div><div class="step">菜单/食谱</div><div class="arrow">→</div><div class="step">采购/下单</div><div class="arrow">→</div><div class="step">打卡跟踪</div></div></div>
+      </section>
+
+      <section class="screen" id="data">
+        <div class="section-head"><div><h2>个人健康数据分析</h2><div class="desc">测评、打卡、食疗记录统一分析，并由AI生成自然语言解读</div></div><button class="btn primary" onclick="toast('个人智能报告已生成')">生成个人智能报告</button></div>
+        <div class="layout">
+          <div class="card panel">
+            <h3>近12周健康评分趋势</h3>
+            <div class="chart">
+              <div class="col" style="height:42%"><span>W1</span></div><div class="col" style="height:48%"><span>W2</span></div><div class="col" style="height:55%"><span>W3</span></div><div class="col" style="height:51%"><span>W4</span></div><div class="col" style="height:60%"><span>W5</span></div><div class="col" style="height:64%"><span>W6</span></div><div class="col" style="height:66%"><span>W7</span></div><div class="col" style="height:70%"><span>W8</span></div><div class="col" style="height:68%"><span>W9</span></div><div class="col" style="height:74%"><span>W10</span></div><div class="col" style="height:78%"><span>W11</span></div><div class="col" style="height:82%"><span>W12</span></div>
+            </div>
+          </div>
+          <div class="card panel"><h3>AI解读</h3><p class="desc">过去12周综合评分整体上升，食养执行度改善明显。当前仍需重点关注餐后血糖波动与钠摄入，建议结合下一次体检报告继续评估。</p><div class="suggestion"><b>建议</b><br>保持本周蔬菜与全谷物摄入；外卖优先选择少酱少盐；持续完成餐后记录。</div></div>
+        </div>
+      </section>
+
+      <section class="screen" id="dietitian">
+        <div class="section-head"><div><h2>营养师专业工作台</h2><div class="desc">客户管理 · 测评报告 · 咨询接待 · AI辅助建议 · 客户统计</div></div><span class="badge">仅展示本人管辖客户</span></div>
+        <div class="grid4">
+          <div class="card kpi"><span class="badge">管辖客户</span><div class="num">128</div></div>
+          <div class="card kpi"><span class="badge">高风险待跟进</span><div class="num">12</div></div>
+          <div class="card kpi"><span class="badge">今日咨询</span><div class="num">16</div></div>
+          <div class="card kpi"><span class="badge">满意度</span><div class="num">96%</div></div>
+        </div>
+        <div class="section-head"><h2>重点客户</h2><button class="btn">导出客户报表</button></div>
+        <div class="card table-wrap">
+          <table class="table"><thead><tr><th>客户</th><th>标签</th><th>最新测评</th><th>风险</th><th>食养执行率</th><th>最近咨询</th><th>操作</th></tr></thead><tbody>
+            <tr><td>李女士</td><td>控糖 · 痰湿</td><td>72 / 待改善</td><td><span class="badge red">高</span></td><td>71%</td><td>今天</td><td><button class="btn" onclick="go('nutrition')">进入咨询</button></td></tr>
+            <tr><td>张先生</td><td>高血压</td><td>80 / 良好</td><td><span class="badge orange">中</span></td><td>83%</td><td>昨天</td><td><button class="btn">查看档案</button></td></tr>
+            <tr><td>王女士</td><td>孕期营养</td><td>86 / 良好</td><td><span class="badge green">低</span></td><td>92%</td><td>08/18</td><td><button class="btn">查看档案</button></td></tr>
+          </tbody></table>
+        </div>
+      </section>
+
+      <section class="screen" id="analytics">
+        <div class="section-head"><div><h2>数据分析智能体 · Vanna.ai Text2SQL</h2><div class="desc">自然语言查询 → 权限过滤 → 安全SELECT → 数据集 → AI图表 → 业务解读 → 智能报告</div></div><span class="badge green">行级权限已启用</span></div>
+        <div class="text2sql">
+          <div class="card query-list">
+            <h3>历史提问</h3>
+            <div class="query-item active">统计我管理客户中糖尿病用户测评等级分布</div>
+            <div class="query-item">近30天高风险客户打卡完成率</div>
+            <div class="query-item">本月咨询满意度趋势</div>
+            <div class="query-item">各测评模板使用次数</div>
+          </div>
+          <div class="card query-main">
+            <div class="query-box"><input id="queryInput" value="统计我管理客户中糖尿病用户测评等级分布"><button class="btn primary" onclick="runQuery()">执行查询</button><button class="btn">🎙</button></div>
+            <div class="sql" id="sqlBox">SELECT assessment_level, COUNT(*) AS cnt
+FROM assessment_result
+WHERE dietitian_id = :current_dietitian
+  AND chronic_tag = '糖尿病'
+GROUP BY assessment_level;</div>
+            <div class="result3">
+              <div class="mini-panel"><h3>原始数据集</h3><table class="table"><tr><th>等级</th><th>人数</th></tr><tr><td>优秀</td><td>12</td></tr><tr><td>良好</td><td>36</td></tr><tr><td>待改善</td><td>24</td></tr></table></div>
+              <div class="mini-panel"><h3>AI图表</h3><div class="mini-chart"><i style="height:33%"></i><i style="height:100%"></i><i style="height:67%"></i></div><div class="desc">柱状图 · 可切换饼图 / 雷达图</div></div>
+              <div class="mini-panel"><h3>大模型业务解读</h3><p class="desc">当前管辖的糖尿病客户中，“良好”占比最高；仍有约三分之一处于待改善区间，可结合打卡率与近期咨询记录筛选重点跟进人群。</p></div>
+            </div>
+            <div class="hero-actions"><button class="btn primary" onclick="toast('智能报告已生成，可选择PDF/Word/Excel/Markdown导出')">生成智能报告</button><button class="btn">下载图表</button><button class="btn">导出Excel</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="admin">
+        <div class="section-head"><div><h2>管理员 · 可视化运营大屏配置</h2><div class="desc">报告组件拖拽组装、自动刷新、异常高亮、全屏投屏</div></div><div><button class="btn">保存方案</button> <button class="btn primary" onclick="toast('已进入全屏预览模式（原型示意）')">全屏预览</button></div></div>
+        <div class="dashboard-builder">
+          <div class="card component-lib"><h3>组件库</h3><div class="component">＋ 指标卡片</div><div class="component">＋ 柱状图</div><div class="component">＋ 折线图</div><div class="component">＋ 饼图</div><div class="component">＋ 雷达图</div><div class="component">＋ AI分析文本</div></div>
+          <div class="canvas">
+            <div class="widget k1"><div class="desc">DAU</div><strong>18,642</strong><div style="color:#6ee1be">↑ 8.4%</div></div>
+            <div class="widget k2"><div class="desc">MAU</div><strong>86,120</strong></div>
+            <div class="widget k3"><div class="desc">本月测评</div><strong>12,538</strong></div>
+            <div class="widget k4"><div class="desc">智能咨询占比</div><strong>68%</strong></div>
+            <div class="widget wide"><h3>各业务场景使用趋势</h3><div class="mini-chart" style="height:170px"><i style="height:50%"></i><i style="height:64%"></i><i style="height:78%"></i><i style="height:56%"></i><i style="height:86%"></i><i style="height:73%"></i><i style="height:92%"></i></div></div>
+            <div class="widget side"><h3>AI运营洞察</h3><p style="font-size:12px;line-height:1.7;color:#a9bfcc">本周体质测评使用量提升明显；慢病场景活跃度增长。某测评模板使用率连续下降，可进一步查看来源渠道和完成人群。</p><span class="badge red">1项异常指标</span></div>
+          </div>
+          <div class="card properties"><h3>大屏设置</h3><div class="prop"><label>刷新周期</label><select><option>5分钟</option><option>15分钟</option><option>30分钟</option></select></div><div class="prop"><label>主题</label><select><option>深色运营大屏</option><option>浅色简洁</option></select></div><div class="prop"><label>异常高亮</label><select><option>启用</option><option>关闭</option></select></div><div class="prop"><label>大屏名称</label><input value="平台日常运营大屏"></div><button class="btn" style="width:100%">导出截图 PNG</button></div>
+        </div>
+      </section>
+
+      <section class="screen" id="agents">
+        <div class="section-head"><div><h2>智能体中心</h2><div class="desc">大模型底座 + 主智能体调度 + 6 大子智能体 + 垂直小模型 + RAG知识库 + OCR + Text2SQL</div></div><button class="btn">智能体运行监控</button></div>
+        <div class="grid3">
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">🧭</div><div><h3>智参主智能体</h3><span class="badge green">运行中</span></div></div><ul><li>识别需求意图</li><li>规划执行链路</li><li>分派六个子智能体并汇总结果</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">🩺</div><div><h3>健康测评智能体</h3><span class="badge green">运行中</span></div></div><ul><li>舌象体质测评</li><li>营养问卷测评</li><li>慢病指标分析</li><li>OCR病历/体检报告解析</li><li>健康风险预警</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">🥢</div><div><h3>智能荐菜智能体</h3><span class="badge green">运行中</span></div></div><ul><li>体质 / 慢病 / 过敏综合匹配</li><li>家庭、宴请、团队菜单生成</li><li>预算与人数约束</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">🌿</div><div><h3>食养食疗智能体</h3><span class="badge green">运行中</span></div></div><ul><li>周期食养食疗计划</li><li>药食同源知识融合</li><li>每日菜谱与采购清单</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">🔔</div><div><h3>健康管家智能体</h3><span class="badge green">运行中</span></div></div><ul><li>健康风险提醒</li><li>用餐 / 打卡提醒</li><li>健康饮品推荐</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">💬</div><div><h3>营养师智能体</h3><span class="badge green">运行中</span></div></div><ul><li>用户营养问答</li><li>读取健康档案上下文</li><li>辅助人工营养师咨询</li><li>引导用户继续测评</li></ul></div>
+          <div class="card agent-card"><div class="agent-top"><div class="agent-icon">📊</div><div><h3>数据分析智能体</h3><span class="badge green">运行中</span></div></div><ul><li>Vanna.ai Text2SQL</li><li>角色级行权限过滤</li><li>图表 / AI解读 / 智能报告</li><li>可视化大屏</li></ul></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal" id="dhModal">
+  <div class="modal-card">
+    <div class="modal-head"><div><span class="badge green">数字人助手 · 小智</span><h2 style="margin-top:8px">语音健康助手</h2></div><button class="close" onclick="closeDigitalHuman()">×</button></div>
+    <div style="display:grid;grid-template-columns:150px 1fr;gap:22px;align-items:center;margin-top:18px">
+      <div class="dh-portrait" style="width:140px;height:170px"><div class="dh-face"><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></div></div>
+      <div>
+        <div class="suggestion"><b>小智：</b><br>您好，我可以陪您完成健康测评、解读报告，也可以把您的问题转给营养师智能体。您可以直接说：“帮我做一个健康风险测评”。</div>
+        <div class="wave" style="height:50px"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="hero-actions"><button class="btn primary" onclick="voiceCommand()">🎙 模拟语音输入</button><button class="btn" onclick="goFromModal('nutrition')">转AI营养师</button><button class="btn" onclick="goFromModal('assessment')">开始测评</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const titles={home:'健康首页',assessment:'健康风险测评',nutrition:'营养师智能体',diet:'食养食疗计划',scenes:'五大健康场景',data:'个人数据分析',dietitian:'营养师工作台',analytics:'Text2SQL智能分析',admin:'运营可视化大屏',agents:'智能体中心'};
+function go(id){
+  document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav a').forEach(x=>x.classList.toggle('active',x.dataset.screen===id));
+  document.getElementById('pageTitle').textContent=titles[id]||'AI智参';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('.nav a').forEach(a=>a.onclick=()=>go(a.dataset.screen));
+document.querySelectorAll('.role-switch button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.role-switch button').forEach(x=>x.classList.remove('active'));b.classList.add('active');toast('已切换角色视图：'+b.textContent)});
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(window._tt);window._tt=setTimeout(()=>t.style.display='none',2600)}
+function openDigitalHuman(){document.getElementById('dhModal').classList.add('open')}
+function closeDigitalHuman(){document.getElementById('dhModal').classList.remove('open')}
+function goFromModal(id){closeDigitalHuman();go(id)}
+function voiceCommand(){toast('识别到语音：“帮我做一个健康风险测评”');setTimeout(()=>goFromModal('assessment'),900)}
+function simulateUpload(){document.getElementById('uploadText').textContent='舌象图片已上传 ✓';toast('图片上传成功，等待AI分析')}
+function simulateAssess(){toast('健康测评智能体正在分析...');setTimeout(()=>{document.getElementById('assessResult').style.display='block';toast('分析完成，已生成体质与风险摘要')},900)}
+function generateReport(){toast('正在汇总舌象、问卷、OCR与健康档案...');setTimeout(()=>toast('综合健康测评报告已生成'),900)}
+function sendChat(){let input=document.getElementById('chatInput');let text=input.value.trim();if(!text)return;let box=document.getElementById('chatBox');box.insertAdjacentHTML('beforeend','<div class="bubble user">'+text.replace(/</g,'&lt;')+'</div>');input.value='';setTimeout(()=>{box.insertAdjacentHTML('beforeend','<div class="bubble ai"><b>AI营养师：</b><br>我已结合您的健康档案与当前测评信息进行分析。建议先从可执行的饮食调整开始，并持续记录打卡；若问题涉及疾病诊断或用药，请咨询执业医师。</div>');box.scrollTop=box.scrollHeight},500);box.scrollTop=box.scrollHeight}
+function runQuery(){let q=document.getElementById('queryInput').value;document.getElementById('sqlBox').textContent="-- 根据自然语言生成，仅允许安全 SELECT 查询\nSELECT assessment_level, COUNT(*) AS cnt\nFROM assessment_result\nWHERE dietitian_id = :current_dietitian\n  AND chronic_tag = '糖尿病'\nGROUP BY assessment_level;";toast('Text2SQL执行成功：已自动追加当前营养师行级权限')}
+</script>
+</body>
+</html>
