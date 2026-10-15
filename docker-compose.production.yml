@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-health-api:${APP_VERSION:-local}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    volumes:
+      - media-data:/app/media
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      ENV: production
+      SECRET_KEY: ${SECRET_KEY:?必须设置至少32位SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:?必须设置前端HTTPS域名}
+      MYSQL_URI: ${MYSQL_URI:?必须设置生产MySQL连接串}
+      REDIS_URL: ${REDIS_URL:?必须设置生产Redis连接串}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?必须设置MinIO地址}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?必须设置MinIO访问密钥}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?必须设置MinIO私密密钥}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ai-health-production}
+      MINIO_SECURE: ${MINIO_SECURE:-true}
+      MILVUS_HOST: ${MILVUS_HOST:?必须设置Milvus主机}
+      MILVUS_PORT: ${MILVUS_PORT:-19530}
+      LLM_STRATEGY: ${LLM_STRATEGY:-silicon_flow}
+      EMBEDDING_STRATEGY: ${EMBEDDING_STRATEGY:-silicon_flow}
+      SILICON_FLOW_API_KEY: ${SILICON_FLOW_API_KEY:?必须设置模型服务密钥}
+      SILICON_FLOW_BASE_URL: ${SILICON_FLOW_BASE_URL:-https://api.siliconflow.cn/v1}
+      SILICON_FLOW_LLM_MODEL: ${SILICON_FLOW_LLM_MODEL:-deepseek-ai/DeepSeek-R1}
+      SILICON_FLOW_EMBEDDING_MODEL: ${SILICON_FLOW_EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5}
+      SMS_DEMO_MODE: "false"
+      INIT_DEMO_USER: "false"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready',timeout=3)); assert data['data']['ready'] is True"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  media-data:

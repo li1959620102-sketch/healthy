@@ -1,0 +1,26 @@
+# 生产运行时依赖。开发、测试和离线工具依赖仍保留在 requirements.txt。
+aiofiles==25.1.0
+cryptography==46.0.5
+fastapi==0.133.0
+jieba==0.42.1
+langchain==0.3.28
+langchain-community==0.3.31
+langchain-core==0.3.84
+langchain-milvus==0.1.10
+langchain-ollama==0.3.10
+langchain-openai==0.3.0
+minio==7.2.20
+openai==1.109.1
+openpyxl==3.1.5
+pydantic==2.12.5
+pymilvus==2.6.9
+PyMySQL==1.1.2
+python-dotenv==1.2.1
+python-multipart==0.0.22
+rank-bm25==0.2.2
+redis==5.3.1
+reportlab==4.4.10
+requests==2.32.5
+SQLAlchemy==2.0.47
+tencentcloud-sdk-python==3.1.133
+uvicorn[standard]==0.41.0

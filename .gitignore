@@ -1,0 +1,50 @@
+# ---------- 环境变量 / 密钥（真实值只放本地，绝不入库）----------
+.env
+.env.*
+!.env.example
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ---------- 日志 / 临时脚本 / 运行产物 ----------
+*.log
+logs/
+_smoke_*.py
+_spike_*.py
+_*.tmp
+
+# ---------- 备份 / 下载 / 本地工具状态（不入库）----------
+backups/
+downloads/
+_integration_result.json
+_junit*.xml
+chroma.sqlite3
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*/
+.workbuddy/
+media/
+
+# ---------- 前端 ----------
+node_modules/
+dist/
+build/
+
+# ---------- 模型 / 大文件 ----------
+*.pt
+*.bin
+*.fsm
+*.onnx
+
+# ---------- 编辑器 / 系统 ----------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

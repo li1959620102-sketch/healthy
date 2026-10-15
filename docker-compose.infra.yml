@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# AI 智参平台 · 开发环境基础设施（Redis + MinIO）
+#
+# 启动：docker compose -f docker-compose.infra.yml up -d
+# 停止：docker compose -f docker-compose.infra.yml down
+# 查看：docker compose -f docker-compose.infra.yml ps
+#
+# 端口刻意避开本机其它项目（见 .env 对应项）：
+#   - Redis  6380  ← 6379 被另一个项目（talent）的 Redis 占用，且带 requirepass
+#   - MinIO  9000/9001 ← 9100 是 Milvus 内部对象存储，不能混用
+#
+# ⚠️ 凭据为**开发环境默认值**，须与 .env 的 MINIO_ACCESS_KEY / MINIO_SECRET_KEY 一致；
+#    生产环境请改为强口令并通过密钥管理注入。
+# ---------------------------------------------------------------------------
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ai-health-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    container_name: ai-health-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # 绑 127.0.0.1：只允许本机访问，不对局域网开放。
+      # 原写法 "9000:9000" 等价于 0.0.0.0:9000，同网段任何设备都能连。
+      # 容器间通信用容器网络（按服务名 minio:9000），不受此处影响。
+      - "127.0.0.1:9000:9000"    # S3 API
+      - "127.0.0.1:9001:9001"    # Web 控制台 http://127.0.0.1:9001
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  # 显式命名，便于与本机既有数据卷复用（不随 compose 项目名变化）
+  redis-data:
+    name: ai-health-redis-data
+  minio-data:
+    name: ai-health-minio-data
