@@ -1,0 +1,15 @@
+# 统一换行符：仓库内存 LF，检出到 Windows 时由 git 决定
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.sqlite3 binary
+*.bin binary
+*.whl binary

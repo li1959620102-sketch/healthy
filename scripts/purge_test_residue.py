@@ -1,237 +1,280 @@
 # -*- coding: utf-8 -*-
-"""清理测试残留数据（P1-4 · 一次性运维脚本，可重复执行）。
+"""清理测试 / 历史残留数据（P1-4 · 运维脚本，默认只预演，可重复执行）。
 
-用法：
-    python scripts/purge_test_residue.py            # 预演：只统计不写库（默认）
+用法
+----
+    python scripts/purge_test_residue.py            # 预演：只统计不写库
     python scripts/purge_test_residue.py --apply    # 真正执行删除
 
-判定口径全部基于「引用不存在」这一客观事实，不靠命名猜测：
-  1. 悬空用户数据 — 任何含 user_id 列的表里，user_id 不在 sys_user 中；
-  2. 测试残留账号 — sys_user 中 username 以 IT / e2e / smoke 开头（测试脚本命名约定）；
-  3. 孤儿报告     — assessment_report.record_id 在 assessment_record 中不存在；
-  4. 孤儿批注     — report_annotation.report_id 在 assessment_report 中不存在。
+判定口径（全部基于「引用不存在」这一客观事实，不靠命名猜测）
+------------------------------------------------------------
+  1. 悬空用户数据 — 任一「指向 sys_user 的外键列」的取值不在 sys_user 中。
+     外键列不再只认 `user_id`：本平台业务库里还有 `operator_id`（操作日志）、
+     `dietitian_id` / `customer_id`（绑定关系），旧版只扫 user_id 是漏清的根因。
+  2. 测试残留账号 — sys_user.username 命中 IT% / e2e% / smoke%（测试脚本命名约定）。
+  3. 孤儿子行     — 按 RELATIONS 全量反连接清扫（消息/方案/批注/日志/OCR/宴请…），
+     迭代至收敛，可处理「删父表后子表变孤儿」的级联。
+  4. 空会话       — 无任何消息的 chat_session，且**仅限种子导入基线（seed.active_run）
+     之前的行**，避免误删本次导入或真实用户刚打开的会话。
 
-删除顺序：子表 → 父表，最后删 sys_user。
-执行前请先整库备份：
+删除顺序：叶子 → 根，最后删 sys_user。执行前请先整库备份：
     MYSQL_PWD=*** mysqldump -h127.0.0.1 -uroot --single-transaction --databases test_db > backups/xxx.sql
 """
+from __future__ import annotations
+
 import argparse
-import os
+import json
 import sys
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-for _k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
-    os.environ.pop(_k, None)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import bindparam, text            # noqa: E402
+import pymysql  # noqa: E402
 
-from app.utils.db import get_session              # noqa: E402
+from app.config import settings  # noqa: E402
 
 # 测试脚本造账号的命名前缀（见 _e2e_*.py / tests）
 TEST_NAME_LIKES = ("IT%", "e2e%", "smoke%")
 
-# P1-3 遗留对象（NRS2002 历史表/视图）：排序规则与主库不一致且不属平台数据，跳过
+# 遗留对象（NRS2002 历史表/视图）：不属平台数据，跳过
 LEGACY_OBJECTS = {"high_risk_patients", "latest_assessments", "user_health_risk_assessment"}
 
-# 无 user_id 列的子表：按父表 id 清理  (子表, 子表外键列, 父表)
-CHILD_OF_PARENT = [
-    ("chat_message", "session_id", "chat_session"),
-    ("consultation_message", "consultation_id", "consultation"),
-    ("diet_plan_recipe", "plan_id", "diet_plan"),
-    ("purchase_item", "list_id", "purchase_list"),
-    ("banquet_guest", "menu_id", "banquet_menu"),
-    ("ocr_indicator", "report_id", "ocr_report"),
+# (子表, 子列, 父表, 父列, 说明, 子列可为 NULL) —— 叶子在前，顺序即安全删除顺序
+RELATIONS = [
+    ("chat_message", "session_id", "chat_session", "id", "问答消息 → 会话", False),
+    ("consultation_message", "consultation_id", "consultation", "id", "咨询消息 → 咨询", False),
+    ("diet_plan_recipe", "plan_id", "diet_plan", "id", "食谱 → 食养方案", False),
+    ("banquet_guest", "menu_id", "banquet_menu", "id", "宴请宾客 → 菜单", False),
+    ("ocr_indicator", "report_id", "ocr_report", "id", "OCR 指标 → OCR 报告", False),
+    ("report_annotation", "report_id", "assessment_report", "id", "批注 → 报告", False),
+    ("report_annotation", "dietitian_id", "sys_user", "user_id", "批注 → 营养师", False),
+    ("operation_log", "operator_id", "sys_user", "user_id", "操作日志 → 操作人", False),
+    ("notification", "user_id", "sys_user", "user_id", "通知 → 用户", False),
+    ("checkin_record", "user_id", "sys_user", "user_id", "打卡 → 用户", False),
+    ("user_profile", "user_id", "sys_user", "user_id", "健康档案 → 用户", False),
+    ("dietitian_profile", "user_id", "sys_user", "user_id", "营养师资料 → 用户", False),
+    ("diet_plan", "report_id", "assessment_report", "id", "食养方案 → 报告", False),
+    ("diet_plan", "user_id", "sys_user", "user_id", "食养方案 → 用户", False),
+    ("assessment_report", "record_id", "assessment_record", "id", "报告 → 测评记录", False),
+    ("assessment_report", "user_id", "sys_user", "user_id", "报告 → 用户", True),
+    ("consultation", "user_id", "sys_user", "user_id", "咨询 → 用户", False),
+    ("dietitian_customer", "customer_id", "sys_user", "user_id", "绑定 → 客户", False),
+    ("dietitian_customer", "dietitian_id", "sys_user", "user_id", "绑定 → 营养师", False),
+    ("chat_session", "user_id", "sys_user", "user_id", "会话 → 用户", True),
+    ("assessment_record", "template_id", "assessment_template", "id", "测评记录 → 模板", False),
+    ("assessment_record", "user_id", "sys_user", "user_id", "测评记录 → 用户", True),
 ]
 
 
-def _user_id_tables(s):
-    names = [r[0] for r in s.execute(text(
+def connect():
+    return pymysql.connect(
+        host=settings.MYSQL_HOST, port=int(settings.MYSQL_PORT),
+        user=settings.MYSQL_USER, password=settings.MYSQL_PASSWORD,
+        database=settings.MYSQL_DB, charset="utf8mb4", autocommit=False,
+    )
+
+
+def baseline() -> dict:
+    """读取种子导入基线（每表 MAX(id)），用于把「历史行」与「导入行」区分开。"""
+    try:
+        with connect() as c, c.cursor() as cur:
+            cur.execute("SELECT config_value FROM system_config WHERE config_key='seed.active_run'")
+            row = cur.fetchone()
+        if not row:
+            return {}
+        return json.loads(row[0]).get("baseline", {}) or {}
+    except Exception:
+        return {}
+
+
+def user_fk_columns(cur) -> list[tuple[str, str]]:
+    """所有指向 sys_user 的外键列：动态扫描 user_id + RELATIONS 里的显式列。"""
+    cur.execute(
         "SELECT table_name FROM information_schema.columns "
         "WHERE table_schema = DATABASE() AND column_name = 'user_id' "
-        "AND table_name <> 'sys_user' ORDER BY table_name")).fetchall()]
-    skipped = sorted(set(names) & LEGACY_OBJECTS)
-    if skipped:
-        print(f"[跳过] 遗留对象（不属平台数据）：{skipped}\n")
-    return [n for n in names if n not in LEGACY_OBJECTS]
+        "AND table_name <> 'sys_user'")
+    cols = {("user_id", r[0]) for r in cur.fetchall()}
+    cols |= {(c, t) for t, c, p, _, _, _ in RELATIONS if p == "sys_user"}
+    return sorted({(col, tbl) for col, tbl in cols if tbl not in LEGACY_OBJECTS})
 
 
-def _ids(s, sql, **params):
-    return [r[0] for r in s.execute(text(sql), params).fetchall()]
-
-
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="真正执行删除（默认仅预演）")
     args = ap.parse_args()
 
-    s = get_session()
+    base = baseline()
+    conn = connect()
+    deleted: dict[str, int] = {}
+
+    def count(sql: str, params=None) -> int:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchone()[0]
+
+    def delete(label: str, sql: str, params=None) -> int:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            n = cur.rowcount
+        deleted[label] = deleted.get(label, 0) + n
+        return n
+
     try:
-        tables = _user_id_tables(s)
+        with conn.cursor() as cur:
+            fk_cols = user_fk_columns(cur)
 
         # ---------------- 1. 悬空用户数据 ----------------
-        print("=" * 70)
-        print("【1】悬空用户数据（user_id 不在 sys_user 中）")
-        print("=" * 70)
-        dangling_uids = set()
-        total_dangling = 0
-        for t in tables:
-            rows = _ids(s,
-                        f"SELECT DISTINCT a.user_id FROM `{t}` a "
-                        "LEFT JOIN sys_user b ON b.user_id = a.user_id "
-                        "WHERE a.user_id IS NOT NULL AND b.user_id IS NULL")
-            if rows:
-                n = s.execute(text(
-                    f"SELECT COUNT(*) FROM `{t}` a "
-                    "LEFT JOIN sys_user b ON b.user_id = a.user_id "
-                    "WHERE a.user_id IS NOT NULL AND b.user_id IS NULL")).scalar()
-                dangling_uids.update(rows)
-                total_dangling += n
-                print(f"   {t:26s} {n:4d} 行 / {len(rows)} 个 user_id")
-        print(f"   {'小计':26s} {total_dangling:4d} 行")
+        print("=" * 74)
+        print("【1】悬空用户数据（外键列取值不在 sys_user 中）")
+        print("=" * 74)
+        dangling_uids: set[str] = set()
+        dangling_total = 0
+        for col, tbl in fk_cols:
+            cond = (f"x.`{col}` IS NOT NULL AND y.user_id IS NULL"
+                    if col != "user_id" else "x.`user_id` IS NOT NULL AND y.user_id IS NULL")
+            n = count(f"SELECT COUNT(*) FROM `{tbl}` x LEFT JOIN sys_user y ON y.user_id = x.`{col}` WHERE {cond}")
+            if n:
+                with conn.cursor() as cur:
+                    cur.execute(f"SELECT DISTINCT x.`{col}` FROM `{tbl}` x "
+                                f"LEFT JOIN sys_user y ON y.user_id = x.`{col}` WHERE {cond}")
+                    dangling_uids |= {r[0] for r in cur.fetchall()}
+                dangling_total += n
+                print(f"   {tbl + '.' + col:34s} {n:5d} 行")
+        print(f"   {'小计':34s} {dangling_total:5d} 行 / {len(dangling_uids)} 个用户")
 
         # ---------------- 2. 测试残留账号 ----------------
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 74)
         print("【2】测试残留账号（username 命中测试命名前缀）")
-        print("=" * 70)
+        print("=" * 74)
         where = " OR ".join([f"username LIKE '{p}'" for p in TEST_NAME_LIKES])
-        accts = s.execute(text(
-            f"SELECT user_id, username, role FROM sys_user WHERE {where} ORDER BY created_at")).fetchall()
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT user_id, username, role FROM sys_user WHERE {where} ORDER BY created_at")
+            accts = cur.fetchall()
         for uid, uname, role in accts:
-            print(f"   {uid:16s} {uname:22s} {role}")
+            print(f"   {uid:16s} {uname:24s} {role}")
         acct_uids = {a[0] for a in accts}
         print(f"   共 {len(acct_uids)} 个账号")
 
-        # ---------------- 3/4. 孤儿报告与孤儿批注 ----------------
-        orphan_reports = _ids(s,
-                              "SELECT rp.id FROM assessment_report rp "
-                              "LEFT JOIN assessment_record r ON r.id = rp.record_id "
-                              "WHERE r.id IS NULL")
-        all_report_ids = _ids(s, "SELECT id FROM assessment_report")
-        orphan_ann = _ids(s,
-                          "SELECT a.id FROM report_annotation a "
-                          "LEFT JOIN assessment_report rp ON rp.id = a.report_id "
-                          "WHERE rp.id IS NULL")
-        print("\n" + "=" * 70)
-        print("【3】孤儿报告（关联的测评记录已不存在）")
-        print("=" * 70)
-        print(f"   {len(orphan_reports)} 条：{orphan_reports}")
-        print("\n" + "=" * 70)
-        print("【4】孤儿批注（关联的报告已不存在）")
-        print("=" * 70)
-        print(f"   {len(orphan_ann)} 条：{orphan_ann}")
+        # ---------------- 3. 孤儿子行 ----------------
+        print("\n" + "=" * 74)
+        print("【3】孤儿子行（关联的父行已不存在）")
+        print("=" * 74)
+        orphan_plan: dict[str, int] = {}
+        for child, ccol, parent, pcol, desc, _nullable in RELATIONS:
+            # NULL 外键表示「没有引用」，不是「引用不存在」，必须排除（游客会话等）
+            n = count(f"SELECT COUNT(*) FROM `{child}` x LEFT JOIN `{parent}` y ON x.`{ccol}`=y.`{pcol}` "
+                      f"WHERE y.`{pcol}` IS NULL AND x.`{ccol}` IS NOT NULL")
+            orphan_plan[desc] = n
+            if n:
+                print(f"   !! {desc:26s} {n:5d} 行")
+        if not any(orphan_plan.values()):
+            print("   （无）")
 
-        # ---------------- 待删 id 集合 ----------------
-        res_uids = sorted(dangling_uids | acct_uids)
-        report_ids = orphan_reports + _ids(
-            s, "SELECT id FROM assessment_report WHERE user_id IN :u",
-            u=res_uids) if res_uids else orphan_reports
+        # ---------------- 4. 空会话（仅历史行） ----------------
+        cut = base.get("chat_session")
+        empty_ids: list[int] = []
+        if cut:
+            with conn.cursor() as cur:
+                cur.execute("SELECT s.id FROM chat_session s LEFT JOIN chat_message m ON m.session_id=s.id "
+                            "WHERE m.id IS NULL AND s.id <= %s ORDER BY s.id", (cut,))
+                empty_ids = [r[0] for r in cur.fetchall()]
+        print("\n" + "=" * 74)
+        print(f"【4】空会话（无消息且 id <= 种子基线 {cut}）")
+        print("=" * 74)
+        print(f"   {len(empty_ids)} 个：{empty_ids}")
 
-        print("\n" + "=" * 70)
-        print(f"合计待处理：{len(res_uids)} 个 user_id / {total_dangling} 行悬空数据 / "
-              f"{len(acct_uids)} 个残留账号 / {len(orphan_reports)} 条孤儿报告 / "
-              f"{len(orphan_ann)} 条孤儿批注")
-        print("=" * 70)
+        target_uids = sorted(dangling_uids | acct_uids)
+        print("\n" + "=" * 74)
+        print(f"合计：{len(target_uids)} 个待清用户 / {dangling_total} 行悬空数据 / "
+              f"{sum(orphan_plan.values())} 行孤儿子行 / {len(empty_ids)} 个空会话")
+        print("=" * 74)
 
         if not args.apply:
             print("\n[预演] 未写库。确认无误后加 --apply 执行删除。")
-            return
+            return 0
 
-        if not res_uids and not orphan_reports and not orphan_ann:
-            print("\n[跳过] 没有需要清理的数据。")
-            return
-
-        # ---------------- 执行删除（子 → 父）----------------
+        # ---------------- 执行删除 ----------------
         print("\n开始删除 ……")
-        deleted = {}
+        if target_uids:
+            ph = ",".join(["%s"] * len(target_uids))
+            # a) 叶子：直接属于待清用户的行（含 operator_id / dietitian_id 等非 user_id 外键）
+            leaf_first = [("chat_message", "session_id", "chat_session", "id"),
+                          ("consultation_message", "consultation_id", "consultation", "id"),
+                          ("diet_plan_recipe", "plan_id", "diet_plan", "id"),
+                          ("banquet_guest", "menu_id", "banquet_menu", "id"),
+                          ("ocr_indicator", "report_id", "ocr_report", "id")]
+            with conn.cursor() as cur:
+                for child, ccol, parent, pcol in leaf_first:
+                    cur.execute(f"DELETE FROM `{child}` WHERE `{ccol}` IN "
+                                f"(SELECT `{pcol}` FROM `{parent}` WHERE user_id IN ({ph}))", target_uids)
+                    deleted[child] = deleted.get(child, 0) + cur.rowcount
+            # b) 所有指向 sys_user 的外键列
+            for col, tbl in fk_cols:
+                delete(tbl, f"DELETE FROM `{tbl}` WHERE `{col}` IN ({ph})", target_uids)
 
-        def run(label, sql, params=None, expanding=False):
-            stmt = text(sql)
-            if expanding:
-                stmt = stmt.bindparams(bindparam("u", expanding=True))
-            n = s.execute(stmt, params or {}).rowcount
-            deleted[label] = deleted.get(label, 0) + n
-            return n
+        # c) 孤儿清扫：迭代至收敛（处理「删父表 → 子表变孤儿」的级联）
+        cascaded = True
+        rounds = 0
+        while cascaded and rounds < 6:
+            cascaded = False
+            rounds += 1
+            for child, ccol, parent, pcol, desc, _nullable in RELATIONS:
+                n = delete(desc, f"DELETE x FROM `{child}` x LEFT JOIN `{parent}` y "
+                                 f"ON x.`{ccol}`=y.`{pcol}` WHERE y.`{pcol}` IS NULL "
+                                 f"AND x.`{ccol}` IS NOT NULL")
+                if n:
+                    cascaded = True
 
-        if res_uids:
-            # a) 批注：随将被删除的报告一起删
-            if report_ids:
-                run("report_annotation",
-                    "DELETE FROM report_annotation WHERE report_id IN :u",
-                    {"u": report_ids}, expanding=True)
-            # b) 无 user_id 列的子表，按父表 id 删
-            for child, fk, parent in CHILD_OF_PARENT:
-                run(child,
-                    f"DELETE FROM `{child}` WHERE {fk} IN "
-                    f"(SELECT id FROM `{parent}` WHERE user_id IN :u)",
-                    {"u": res_uids}, expanding=True)
-            # c) 绑定关系（无 user_id 列，两列都指向用户）
-            run("dietitian_customer",
-                "DELETE FROM dietitian_customer "
-                "WHERE dietitian_id IN :u OR customer_id IN :u",
-                {"u": res_uids}, expanding=True)
-            # d) 所有带 user_id 列的表
-            for t in tables:
-                run(t, f"DELETE FROM `{t}` WHERE user_id IN :u", {"u": res_uids}, expanding=True)
+        # d) 空会话
+        if empty_ids:
+            ph = ",".join(["%s"] * len(empty_ids))
+            delete("chat_session(空)", f"DELETE FROM chat_session WHERE id IN ({ph})", empty_ids)
 
-        # e) 孤儿报告（user_id 为 NULL、记录已不存在的游客残留）
-        if orphan_reports:
-            run("assessment_report(孤儿)",
-                "DELETE FROM assessment_report WHERE id IN :u",
-                {"u": orphan_reports}, expanding=True)
-
-        # f) 孤儿批注
-        if orphan_ann:
-            run("report_annotation(孤儿)",
-                "DELETE FROM report_annotation WHERE id IN :u",
-                {"u": orphan_ann}, expanding=True)
-
-        # g) 最后删残留账号
+        # e) 最后删残留账号
         if acct_uids:
-            run("sys_user", "DELETE FROM sys_user WHERE user_id IN :u",
-                {"u": sorted(acct_uids)}, expanding=True)
+            ph = ",".join(["%s"] * len(acct_uids))
+            delete("sys_user", f"DELETE FROM sys_user WHERE user_id IN ({ph})", sorted(acct_uids))
 
-        s.commit()
+        conn.commit()
 
         print("\n删除明细：")
-        for k, v in deleted.items():
+        for k, v in sorted(deleted.items(), key=lambda kv: -kv[1]):
             if v:
                 print(f"   {k:26s} -{v}")
         print(f"   合计删除 {sum(deleted.values())} 行")
 
         # ---------------- 复查 ----------------
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 74)
         print("复查")
-        print("=" * 70)
+        print("=" * 74)
         left = 0
-        for t in tables:
-            n = s.execute(text(
-                f"SELECT COUNT(*) FROM `{t}` a "
-                "LEFT JOIN sys_user b ON b.user_id = a.user_id "
-                "WHERE a.user_id IS NOT NULL AND b.user_id IS NULL")).scalar()
+        for col, tbl in fk_cols:
+            n = count(f"SELECT COUNT(*) FROM `{tbl}` x LEFT JOIN sys_user y ON y.user_id = x.`{col}` "
+                      f"WHERE x.`{col}` IS NOT NULL AND y.user_id IS NULL")
             if n:
-                print(f"   [!] {t} 仍有悬空 {n} 行")
+                print(f"   [!] {tbl}.{col} 仍有悬空 {n} 行")
                 left += n
-        orph = s.execute(text(
-            "SELECT COUNT(*) FROM assessment_report rp "
-            "LEFT JOIN assessment_record r ON r.id = rp.record_id WHERE r.id IS NULL")).scalar()
-        orph_a = s.execute(text(
-            "SELECT COUNT(*) FROM report_annotation a "
-            "LEFT JOIN assessment_report rp ON rp.id = a.report_id WHERE rp.id IS NULL")).scalar()
-        acct_left = s.execute(text(
-            f"SELECT COUNT(*) FROM sys_user WHERE {where}")).scalar()
-        print(f"   悬空用户数据：{left} 行")
-        print(f"   孤儿报告：{orph} 条")
-        print(f"   孤儿批注：{orph_a} 条")
-        print(f"   测试残留账号：{acct_left} 个")
-        print("   " + ("全部清零 ✔" if left == orph == orph_a == acct_left == 0
-                       else "仍有残留，请人工核对"))
+        orph = 0
+        for child, ccol, parent, pcol, desc, _nullable in RELATIONS:
+            n = count(f"SELECT COUNT(*) FROM `{child}` x LEFT JOIN `{parent}` y ON x.`{ccol}`=y.`{pcol}` "
+                      f"WHERE y.`{pcol}` IS NULL AND x.`{ccol}` IS NOT NULL")
+            if n:
+                print(f"   [!] {desc} 仍有孤儿 {n} 行")
+                orph += n
+        empty_left = count("SELECT COUNT(*) FROM chat_session s LEFT JOIN chat_message m "
+                           "ON m.session_id=s.id WHERE m.id IS NULL") if cut else 0
+        acct_left = count(f"SELECT COUNT(*) FROM sys_user WHERE {where}")
+        print(f"   悬空用户数据 {left} 行 / 孤儿子行 {orph} 行 / 空会话 {empty_left} 个 / 残留账号 {acct_left} 个")
+        print("   " + ("全部清零 ✔" if left == orph == empty_left == acct_left == 0 else "仍有残留，请人工核对"))
+        return 0 if left == orph == empty_left == acct_left == 0 else 1
     except Exception:
-        s.rollback()
+        conn.rollback()
         raise
     finally:
-        s.close()
+        conn.close()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
