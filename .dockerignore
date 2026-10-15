@@ -1,0 +1,15 @@
+.env
+.git
+.idea
+.pytest_cache
+__pycache__
+*.py[cod]
+*.log
+chroma.sqlite3
+downloads
+knowledge_base
+frontend
+prototype
+tests
+_e2e_*.py
+_integration_result.json
