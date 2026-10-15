@@ -1,0 +1,52 @@
+{
+  "table_definitions": [
+    {
+      "name": "user_health_risk_assessment",
+      "ddl": "CREATE TABLE IF NOT EXISTS user_health_risk_assessment (\n    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '记录ID',\n    user_id VARCHAR(64) NOT NULL COMMENT '用户唯一标识',\n    user_name VARCHAR(100) NOT NULL COMMENT '用户姓名',\n    sex ENUM('男', '女', '其他') NOT NULL COMMENT '性别',\n    age TINYINT UNSIGNED NOT NULL COMMENT '年龄',\n    assessment_time DATETIME NOT NULL COMMENT '测评时间',\n    assessment_count INT DEFAULT 1 COMMENT '测试次数',\n    total_score TINYINT UNSIGNED NOT NULL COMMENT '总分',\n    nutritional_impairment_score TINYINT UNSIGNED NOT NULL COMMENT '营养受损分',\n    disease_severity_score TINYINT UNSIGNED NOT NULL COMMENT '疾病严重度分',\n    age_score TINYINT UNSIGNED NOT NULL COMMENT '年龄分',\n    assessment_basis TEXT COMMENT '评分依据说明',\n    risk_level ENUM('无风险', '低风险', '中风险', '高风险') NOT NULL COMMENT '风险等级',\n    bmi DECIMAL(4,2) COMMENT 'BMI指数',\n    weight_change VARCHAR(100) COMMENT '体重变化情况',\n    disease_condition TEXT COMMENT '疾病状况描述',\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间'\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户健康风险测评记录表';"
+    }
+  ],
+  "documentations": [
+    {
+      "title": "健康风险评估表说明",
+      "content": "用户健康风险测评记录表包含NRS2002营养风险筛查的完整评分数据。\n重要字段说明：\n- total_score: 总分(0-7分)，分数越高风险越大\n- nutritional_impairment_score: 营养受损评分(0-3分)\n- disease_severity_score: 疾病严重度评分(0-3分)  \n- age_score: 年龄评分(0-1分)，70岁以上为1分\n- risk_level: 风险等级，根据总分自动计算\n- assessment_count: 测评次数，反映用户测评频率\n\n常用查询模式：\n1. 查询高风险患者：WHERE risk_level = '高风险'\n2. 按时间范围查询：WHERE assessment_time BETWEEN '开始时间' AND '结束时间'\n3. 统计各风险等级人数：GROUP BY risk_level\n4. 查询用户历史测评记录：WHERE user_id is not null"
+    }
+  ],
+  "example_queries": [
+    {
+      "description": "查询高风险患者(大风险即为高风险)",
+      "sql": "SELECT user_name, age, total_score, risk_level FROM user_health_risk_assessment WHERE risk_level = '高风险' ORDER BY total_score DESC LIMIT 10"
+    },
+    {
+      "description": "统计各风险等级人数",
+      "sql": "SELECT risk_level, COUNT(*) as count FROM user_health_risk_assessment GROUP BY risk_level ORDER BY count DESC"
+    },
+    {
+      "description": "查询用户历史测评记录",
+      "sql": "SELECT user_name, assessment_time, total_score FROM user_health_risk_assessment WHERE user_id = 'USER001' ORDER BY assessment_time DESC"
+    },
+    {
+      "description": "统计男性患者的平均分和平均年龄",
+      "sql": "SELECT AVG(total_score) as avg_score, AVG(age) as avg_age FROM user_health_risk_assessment WHERE sex = '男'"
+    },
+    {
+      "description": "按日期统计测评数量",
+      "sql": "SELECT DATE(assessment_time) as date, COUNT(*) as daily_count FROM user_health_risk_assessment GROUP BY DATE(assessment_time) ORDER BY date DESC LIMIT 7"
+    },
+    {
+      "description": "查询所有用户的最新测评记录",
+      "sql": "SELECT t1.user_name, t1.age, t1.total_score, t1.risk_level, t1.assessment_time FROM user_health_risk_assessment t1 INNER JOIN (SELECT user_id, MAX(assessment_time) as max_time FROM user_health_risk_assessment GROUP BY user_id) t2 ON t1.user_id = t2.user_id AND t1.assessment_time = t2.max_time"
+    },
+    {
+      "description": "统计不同年龄段的风险分布",
+      "sql": "SELECT CASE WHEN age < 30 THEN '30岁以下' WHEN age BETWEEN 30 AND 50 THEN '30-50岁' ELSE '50岁以上' END as age_group, risk_level, COUNT(*) as count FROM user_health_risk_assessment GROUP BY age_group, risk_level ORDER BY age_group, risk_level"
+    }
+  ],
+  "training_config": {
+    "enable_ddl_training": true,
+    "enable_documentation_training": true,
+    "enable_query_training": true,
+    "batch_size": 10,
+    "retry_on_failure": true,
+    "max_retries": 3
+  }
+}
