@@ -1,0 +1,51 @@
+{
+    "title": {
+        "text": "NRS2002营养风险评估统计",
+        "left": "center",
+        "textStyle": {
+            "fontSize": 16
+        }
+    },
+    "xAxis": {
+        "type": "category",
+        "data": [
+            "张三"
+        ],
+        "axisLabel": {
+            "rotate": 45,
+            "interval": 0
+        }
+    },
+    "yAxis": {
+        "type": "value",
+        "name": "NRS2002总分"
+    },
+    "grid": {
+        "bottom": "25%"
+    },
+    "tooltip": {
+        "trigger": "axis",
+        "axisPointer": {
+            "type": "shadow"
+        }
+    },
+    "series": [
+        {
+            "data": [
+                {
+                    "value": 6,
+                    "itemStyle": {
+                        "color": "#EE6666",
+                        "borderRadius": 5
+                    }
+                }
+            ],
+            "type": "bar",
+            "name": "总分",
+            "label": {
+                "show": true,
+                "position": "top"
+            }
+        }
+    ]
+}

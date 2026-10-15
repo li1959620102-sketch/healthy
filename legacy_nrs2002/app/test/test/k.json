@@ -1,0 +1,41 @@
+{
+    "title": {
+        "text": "用户分布饼图",
+        "left": "center"
+    },
+    "tooltip": {
+        "trigger": "item"
+    },
+    "legend": {
+        "orient": "vertical",
+        "left": "left"
+    },
+    "series": [
+        {
+            "name": "用户",
+            "type": "pie",
+            "radius": "50%",
+            "data": [
+                {
+                    "value": 1,
+                    "name": "张三"
+                },
+                {
+                    "value": 1,
+                    "name": "李四"
+                },
+                {
+                    "value": 1,
+                    "name": "王五"
+                }
+            ],
+            "emphasis": {
+                "itemStyle": {
+                    "shadowBlur": 10,
+                    "shadowOffsetX": 0,
+                    "shadowColor": "rgba(0,0,0,0.5)"
+                }
+            }
+        }
+    ]
+}
