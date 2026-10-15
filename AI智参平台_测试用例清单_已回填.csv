@@ -1,0 +1,217 @@
+﻿用例编号,所属模块,子模块,用例标题,优先级,用例类型,执行状态,实际结果,备注(依据),自动化覆盖,自动化证据
+SM-01,冒烟测试,编写前提（三条必须知道）,服务健康,P0,SM,已执行（自动化）,通过,,已覆盖,dependencies::test_ready_probe_reports_each_dependency; storage::test_ready_reports_redis_and_minio_ok
+SM-02,冒烟测试,编写前提（三条必须知道）,发送验证码,P0,SM,未执行,,,未覆盖,
+SM-03,冒烟测试,编写前提（三条必须知道）,注册,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::_register（6 处用例调用并断言 code=0）；⚠️契约差异：注册不返回令牌，令牌走登录换取
+SM-04,冒烟测试,编写前提（三条必须知道）,登录,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::_login（多处调用）
+SM-05,冒烟测试,编写前提（三条必须知道）,获取当前用户,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_special_chars_stored_safely / test_bv14_emoji_and_rare_chars_roundtrip（GET /users/me）
+SM-06,冒烟测试,编写前提（三条必须知道）,未登录访问,P0,SM,未执行,,,未覆盖,
+SM-07,冒烟测试,编写前提（三条必须知道）,完善资料,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv08_diseases_saved（PUT /users/me/profile）
+SM-08,冒烟测试,编写前提（三条必须知道）,模板列表,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（断言已发布可见；未断言排除草稿/待审核/已下线）
+SM-09,冒烟测试,编写前提（三条必须知道）,发起测评,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（assessment_id + template_snapshot + profile_snapshot）
+SM-10,冒烟测试,编写前提（三条必须知道）,获取题目,P0,SM,未执行,,,未覆盖,
+SM-11,冒烟测试,编写前提（三条必须知道）,保存草稿,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（PATCH answers → progress 1/N）
+SM-12,冒烟测试,编写前提（三条必须知道）,提交测评,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（report_id/score/level）; test_bv29_concurrent_submit_single_report
+SM-13,冒烟测试,编写前提（三条必须知道）,报告流式,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv22_expired_ticket_rejected（仅负向：过期短票被拒；未断言 start→delta→done 事件链）
+SM-14,冒烟测试,编写前提（三条必须知道）,报告详情,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（GET /reports/{id} → score/dimension_scores）
+SM-15,冒烟测试,编写前提（三条必须知道）,智能查询,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,temporal_rules::test_bv21_guest_query_quota（端点可达；未断言 SSE 事件链）
+SM-16,冒烟测试,编写前提（三条必须知道）,拒答策略,P0,SM,未执行,,,未覆盖,
+SM-17,冒烟测试,编写前提（三条必须知道）,游客测评,P0,SM,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_assessment_quota
+SM-18,冒烟测试,编写前提（三条必须知道）,游客认领,P0,SM,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
+SM-19,冒烟测试,编写前提（三条必须知道）,营养师客户列表,P0,SM,未执行,,,未覆盖,
+SM-20,冒烟测试,编写前提（三条必须知道）,资质审核,P0,SM,未执行,,,未覆盖,
+SM-21,冒烟测试,编写前提（三条必须知道）,模板审核流,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（submit-audit → audit → 列表可见）
+SM-22,冒烟测试,编写前提（三条必须知道）,幂等提交,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window; test_bv29_concurrent_submit_single_report
+SM-23,冒烟测试,编写前提（三条必须知道）,趋势看板,P0,SM,未执行,,,未覆盖,
+SM-24,冒烟测试,编写前提（三条必须知道）,知识库上传,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,storage::test_bv28_knowledge_reject_unsupported_extension（仅扩展名守卫；上传+embed 成功路径未覆盖）
+SM-25,冒烟测试,编写前提（三条必须知道）,注销账号,P0,SM,未执行,,,未覆盖,
+IT-A-01,接口联调,认证 auth（IT-A）,验证码限频,P1,IT,未执行,,,未覆盖,
+IT-A-02,接口联调,认证 auth（IT-A）,验证码错误,P1,IT,未执行,,,未覆盖,
+IT-A-03,接口联调,认证 auth（IT-A）,验证码过期,P1,IT,未执行,,,未覆盖,
+IT-A-04,接口联调,认证 auth（IT-A）,手机号已注册,P1,IT,未执行,,,未覆盖,
+IT-A-05,接口联调,认证 auth（IT-A）,令牌刷新,P1,IT,未执行,,,未覆盖,
+IT-A-06,接口联调,认证 auth（IT-A）,令牌过期,P1,IT,未执行,,,未覆盖,
+IT-A-07,接口联调,认证 auth（IT-A）,30 分钟无操作,P1,IT,未执行,,,未覆盖,
+IT-A-08,接口联调,认证 auth（IT-A）,登出,P1,IT,未执行,,,未覆盖,
+IT-A-09,接口联调,认证 auth（IT-A）,角色越权,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,prototype_alignment::test_dietitian_overview_requires_role（角色校验）
+IT-A-10,接口联调,认证 auth（IT-A）,二次验证,P1,IT,未执行,,,未覆盖,
+IT-U-01,接口联调,用户 users（IT-U）,资料完整性,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv08_diseases_saved（档案字段保存）
+IT-U-02,接口联调,用户 users（IT-U）,敏感信息单独同意,P0,IT,未执行,,,未覆盖,
+IT-U-03,接口联调,用户 users（IT-U）,改绑手机号,P1,IT,未执行,,,未覆盖,
+IT-U-04,接口联调,用户 users（IT-U）,改密码,P1,IT,未执行,,,未覆盖,
+IT-U-05,接口联调,用户 users（IT-U）,数据导出,P1,IT,未执行,,,未覆盖,
+IT-U-06,接口联调,用户 users（IT-U）,注销后登录,P0,IT,未执行,,,未覆盖,
+IT-U-07,接口联调,用户 users（IT-U）,注销数据范围,P0,IT,未执行,,,未覆盖,
+IT-U-08,接口联调,用户 users（IT-U）,请求追踪,P2,IT,未执行,,,未覆盖,
+IT-U-09,接口联调,用户 users（IT-U）,并发改资料,P2,IT,未执行,,,未覆盖,
+IT-U-10,接口联调,用户 users（IT-U）,游客限流,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_query_quota / test_bv21_guest_assessment_quota
+IT-N-01,接口联调,营养师与绑定（IT-N）,资质提交,P1,IT,未执行,,,未覆盖,
+IT-N-02,接口联调,营养师与绑定（IT-N）,审核驳回,P1,IT,未执行,,,未覆盖,
+IT-N-03,接口联调,营养师与绑定（IT-N）,邀请码绑定,P0,IT,未执行,,,未覆盖,
+IT-N-04,接口联调,营养师与绑定（IT-N）,同期只绑 1 人,P0,IT,未执行,,,未覆盖,
+IT-N-05,接口联调,营养师与绑定（IT-N）,咨询自动绑定,P1,IT,未执行,,,未覆盖,
+IT-N-06,接口联调,营养师与绑定（IT-N）,解绑后权限,P0,IT,未执行,,,未覆盖,
+IT-N-07,接口联调,营养师与绑定（IT-N）,历史数据保留,P1,IT,未执行,,,未覆盖,
+IT-N-08,接口联调,营养师与绑定（IT-N）,未绑定不可见,P0,IT,未执行,,,未覆盖,
+IT-N-09,接口联调,营养师与绑定（IT-N）,客户筛选,P1,IT,未执行,,,未覆盖,
+IT-N-10,接口联调,营养师与绑定（IT-N）,营养师被禁用,P0,IT,未执行,,,未覆盖,
+IT-N-11,接口联调,营养师与绑定（IT-N）,禁用后客户处置,P1,IT,未执行,,,未覆盖,
+IT-N-12,接口联调,营养师与绑定（IT-N）,批注报告,P1,IT,未执行,,,未覆盖,
+IT-N-13,接口联调,营养师与绑定（IT-N）,非绑定批注,P0,IT,未执行,,,未覆盖,
+IT-N-14,接口联调,营养师与绑定（IT-N）,导出授权,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,batch56::test_dietitian_export_customers（仅营养师导出自身客户）
+IT-T-01,接口联调,测评模板（IT-T）,状态机,P0,IT,未执行,,,未覆盖,
+IT-T-02,接口联调,测评模板（IT-T）,草稿不可见,P0,IT,未执行,,,未覆盖,
+IT-T-03,接口联调,测评模板（IT-T）,编辑生成新版本,P0,IT,未执行,,,未覆盖,
+IT-T-04,接口联调,测评模板（IT-T）,版本锁定,P0,IT,未执行,,,未覆盖,
+IT-T-05,接口联调,测评模板（IT-T）,下线后历史可见,P0,IT,未执行,,,未覆盖,
+IT-T-06,接口联调,测评模板（IT-T）,下线有进行中测评,P1,IT,未执行,,,未覆盖,
+IT-T-07,接口联调,测评模板（IT-T）,权重和为 1,P1,IT,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv18_weight_sum_must_be_one（规则层）
+IT-T-08,接口联调,测评模板（IT-T）,版本列表,P2,IT,未执行,,,未覆盖,
+IT-T-09,接口联调,测评模板（IT-T）,非创建者编辑,P1,IT,未执行,,,未覆盖,
+IT-T-10,接口联调,测评模板（IT-T）,权重版本记录,P1,IT,未执行,,,未覆盖,
+IT-AS-01,接口联调,测评执行（IT-AS）,快照比对,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（template_snapshot/profile_snapshot）
+IT-AS-02,接口联调,测评执行（IT-AS）,断点续答,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（保存后未重新读取验证续答）
+IT-AS-03,接口联调,测评执行（IT-AS）,跨设备续答,P1,IT,未执行,,,未覆盖,
+IT-AS-04,接口联调,测评执行（IT-AS）,草稿 30 天,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv24_draft_expiry
+IT-AS-05,接口联调,测评执行（IT-AS）,实时校验,P1,IT,未执行,,,未覆盖,
+IT-AS-06,接口联调,测评执行（IT-AS）,必填校验,P1,IT,未执行,,,未覆盖,
+IT-AS-07,接口联调,测评执行（IT-AS）,保存草稿性能,P1,IT,未执行,,,未覆盖,
+IT-AS-08,接口联调,测评执行（IT-AS）,提交性能,P0,IT,未执行,,,未覆盖,
+IT-AS-09,接口联调,测评执行（IT-AS）,幂等-同键重放,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window
+IT-AS-10,接口联调,测评执行（IT-AS）,幂等-超窗口,P1,IT,未执行,,,未覆盖,
+IT-AS-11,接口联调,测评执行（IT-AS）,幂等键缺失,P1,IT,未执行,,,未覆盖,
+IT-AS-12,接口联调,测评执行（IT-AS）,已提交重复提交,P1,IT,未执行,,,未覆盖,
+IT-AS-13,接口联调,测评执行（IT-AS）,存在未完成测评,P1,IT,未执行,,,未覆盖,
+IT-AS-14,接口联调,测评执行（IT-AS）,作废,P1,IT,未执行,,,未覆盖,
+IT-AS-15,接口联调,测评执行（IT-AS）,游客→注册→认领,P0,IT,未执行,,,未覆盖,
+IT-AS-16,接口联调,测评执行（IT-AS）,游客认领冒用,P0,IT,未执行,,,未覆盖,
+IT-AS-17,接口联调,测评执行（IT-AS）,游客超时认领,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
+IT-AS-18,接口联调,测评执行（IT-AS）,草稿乐观锁,P1,IT,未执行,,,未覆盖,
+IT-AS-19,接口联调,测评执行（IT-AS）,模板快照完整性,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（仅断言快照非空）
+IT-AS-20,接口联调,测评执行（IT-AS）,评分确定性,P0,IT,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv16_level_is_deterministic
+IT-R-01,接口联调,报告（IT-R）,结构化字段,P0,IT,未执行,,,未覆盖,
+IT-R-02,接口联调,报告（IT-R）,建议结构,P0,IT,未执行,,,未覆盖,
+IT-R-03,接口联调,报告（IT-R）,引用可溯源,P0,IT,未执行,,,未覆盖,
+IT-R-04,接口联调,报告（IT-R）,免责声明,P0,IT,未执行,,,未覆盖,
+IT-R-05,接口联调,报告（IT-R）,生成中状态,P1,IT,未执行,,,未覆盖,
+IT-R-06,接口联调,报告（IT-R）,自动重试,P1,IT,未执行,,,未覆盖,
+IT-R-07,接口联调,报告（IT-R）,降级基础版,P0,IT,未执行,,,未覆盖,
+IT-R-08,接口联调,报告（IT-R）,手动重生成,P0,IT,未执行,,,未覆盖,
+IT-R-09,接口联调,报告（IT-R）,答案不丢失,P0,IT,未执行,,,未覆盖,
+IT-R-10,接口联调,报告（IT-R）,SSE 短票,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv22_stream_ticket_issued
+IT-R-11,接口联调,报告（IT-R）,流式事件完整性,P0,IT,未执行,,,未覆盖,
+IT-R-12,接口联调,报告（IT-R）,PDF 导出,P2,IT,已执行（自动化）,通过,,已覆盖,batch56::test_report_pdf_generates_real_file
+IT-R-13,接口联调,报告（IT-R）,批注后状态,P1,IT,未执行,,,未覆盖,
+IT-R-14,接口联调,报告（IT-R）,他人报告越权,P0,IT,未执行,,,未覆盖,
+IT-C-01,接口联调,智能查询（IT-C）,首字节时延,P0,IT,未执行,,,未覆盖,
+IT-C-02,接口联调,智能查询（IT-C）,完整回答时延,P0,IT,未执行,,,未覆盖,
+IT-C-03,接口联调,智能查询（IT-C）,缓存命中,P2,IT,未执行,,,未覆盖,
+IT-C-04,接口联调,智能查询（IT-C）,短输入,P1,IT,未执行,,,未覆盖,
+IT-C-05,接口联调,智能查询（IT-C）,引用来源,P0,IT,未执行,,,未覆盖,
+IT-C-06,接口联调,智能查询（IT-C）,无来源兜底,P0,IT,未执行,,,未覆盖,
+IT-C-07,接口联调,智能查询（IT-C）,拒答-用药,P0,IT,未执行,,,未覆盖,
+IT-C-08,接口联调,智能查询（IT-C）,拒答-诊断,P0,IT,未执行,,,未覆盖,
+IT-C-09,接口联调,智能查询（IT-C）,拒答-报告解读,P0,IT,未执行,,,未覆盖,
+IT-C-10,接口联调,智能查询（IT-C）,拒答-孕婴,P0,IT,未执行,,,未覆盖,
+IT-C-11,接口联调,智能查询（IT-C）,多轮追问,P1,IT,未执行,,,未覆盖,
+IT-C-12,接口联调,智能查询（IT-C）,会话列表与历史,P1,IT,未执行,,,未覆盖,
+IT-C-13,接口联调,智能查询（IT-C）,转人工,P1,IT,未执行,,,未覆盖,
+IT-C-14,接口联调,智能查询（IT-C）,转人工后恢复,P2,IT,未执行,,,未覆盖,
+IT-C-15,接口联调,智能查询（IT-C）,服务繁忙,P0,IT,未执行,,,未覆盖,
+IT-C-16,接口联调,智能查询（IT-C）,模型超时,P1,IT,未执行,,,未覆盖,
+IT-CS-01,接口联调,人工咨询（IT-CS）,发起咨询,P1,IT,未执行,,,未覆盖,
+IT-CS-02,接口联调,人工咨询（IT-CS）,状态机,P1,IT,未执行,,,未覆盖,
+IT-CS-03,接口联调,人工咨询（IT-CS）,消息收发,P0,IT,未执行,,,未覆盖,
+IT-CS-04,接口联调,人工咨询（IT-CS）,非相关方访问,P0,IT,未执行,,,未覆盖,
+IT-CS-05,接口联调,人工咨询（IT-CS）,30 分钟超时,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv25_consultation_timeout
+IT-CS-06,接口联调,人工咨询（IT-CS）,满意度评价,P2,IT,未执行,,,未覆盖,
+IT-CS-07,接口联调,人工咨询（IT-CS）,结束咨询,P1,IT,未执行,,,未覆盖,
+IT-CS-08,接口联调,人工咨询（IT-CS）,图片消息,P2,IT,未执行,,,未覆盖,
+IT-D-01,接口联调,数据看板（IT-D）,同模板趋势,P0,IT,未执行,,,未覆盖,
+IT-D-02,接口联调,数据看板（IT-D）,跨模板标注,P1,IT,未执行,,,未覆盖,
+IT-D-03,接口联调,数据看板（IT-D）,图表时延,P1,IT,未执行,,,未覆盖,
+IT-D-04,接口联调,数据看板（IT-D）,智能解读时延,P1,IT,未执行,,,未覆盖,
+IT-D-05,接口联调,数据看板（IT-D）,归因正确性,P0,IT,未执行,,,未覆盖,
+IT-D-06,接口联调,数据看板（IT-D）,空数据,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv30_empty_lists（覆盖 assessments/diet-plans/consultations，非看板）
+IT-D-07,接口联调,数据看板（IT-D）,等价数据表,P1,IT,未执行,,,未覆盖,
+IT-AD-01,接口联调,管理后台（IT-AD）,用户禁用,P1,IT,未执行,,,未覆盖,
+IT-AD-02,接口联调,管理后台（IT-AD）,解封,P1,IT,未执行,,,未覆盖,
+IT-AD-03,接口联调,管理后台（IT-AD）,资质审核列表,P2,IT,未执行,,,未覆盖,
+IT-AD-04,接口联调,管理后台（IT-AD）,系统配置,P1,IT,未执行,,,未覆盖,
+IT-AD-05,接口联调,管理后台（IT-AD）,操作日志,P1,IT,未执行,,,未覆盖,
+IT-AD-06,接口联调,管理后台（IT-AD）,运营概览,P2,IT,未执行,,,未覆盖,
+IT-AD-07,接口联调,管理后台（IT-AD）,深分页,P2,IT,未执行,,,未覆盖,
+IT-K-01,接口联调,知识库（IT-K）,上传格式,P2,IT,已执行（自动化）,通过,,已覆盖,storage::test_bv28_knowledge_reject_unsupported_extension
+IT-K-02,接口联调,知识库（IT-K）,向量化状态,P1,IT,未执行,,,未覆盖,
+IT-K-03,接口联调,知识库（IT-K）,删除联动,P0,IT,未执行,,,未覆盖,
+IT-K-04,接口联调,知识库（IT-K）,删除后查询,P1,IT,未执行,,,未覆盖,
+IT-K-05,接口联调,知识库（IT-K）,非管理员访问,P1,IT,未执行,,,未覆盖,
+BV-01,边界值,知识库（IT-K）,手机号｜11 位正常 / 10 位 / 12 位 / 空 / 字母 / 非 1 开头,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv01_phone; boundary_api::test_bv01_invalid_phone_rejected / test_bv01_valid_phone_accepted
+BV-02,边界值,知识库（IT-K）,验证码｜6 位 / 5 位 / 7 位 / 全空格,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv02_verify_code / test_bv02_code_is_trimmed_before_check
+BV-03,边界值,知识库（IT-K）,密码｜8 / 7 / 64 / 65 位,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv03_password / test_bv03_password_error_message_mentions_length
+BV-04,边界值,知识库（IT-K）,身高｜50 / 100 / 250 / 251 / 0 / -1,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv04_height
+BV-05,边界值,知识库（IT-K）,体重｜2 / 20 / 300 / 301 / 0,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv05_weight
+BV-06,边界值,知识库（IT-K）,BMI 计算｜身高 0（除零）,P0,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv06_bmi_no_infinity / test_bv06_bmi_normal
+BV-07,边界值,知识库（IT-K）,年龄｜0 / 1 / 17 / 18 / 120 / 121,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv07_age / test_bv07_minor_flagged_as_warning
+BV-08,边界值,知识库（IT-K）,疾病史｜0 项 / 1 项 / 全选 20 项,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv08_diseases_saved
+BV-09,边界值,知识库（IT-K）,测评题目数｜1 题 / 8 题 / 200 题,P2,BV,未执行,,,未覆盖,
+BV-10,边界值,知识库（IT-K）,单页题量｜8 题 / 9 题,P2,BV,未执行,,,未覆盖,
+BV-11,边界值,知识库（IT-K）,答案数值｜最小选项 / 最大选项 / 未选,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv11_required_answer_missing / test_bv11_optional_answer_may_be_empty
+BV-12,边界值,知识库（IT-K）,答案文本｜0 / 1 / 500 / 501 字,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv12_answer_text
+BV-13,边界值,知识库（IT-K）,特殊字符｜`<script>alert(1)</script>`、SQL 片段,P0,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_special_chars_stored_safely / test_bv13_sql_injection_attempt_is_not_executed
+BV-14,边界值,知识库（IT-K）,emoji / 生僻字｜昵称含 emoji、四字节字符,P2,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv14_emoji_and_rare_chars_roundtrip
+BV-15,边界值,知识库（IT-K）,总分边界｜全选最低分 / 全选最高分,P0,BV,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv15_all_lowest_is_zero / _all_highest_is_hundred / _score_never_out_of_range
+BV-16,边界值,知识库（IT-K）,等级阈值｜恰好等于等级分界线（如 60.0）,P0,BV,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv16_level_boundary_is_single_valued / _thresholds_are_ordered_and_non_overlapping / _level_is_deterministic
+BV-17,边界值,知识库（IT-K）,加权和｜各维度得分加权求和,P0,BV,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv17_weighted_sum_matches_manual_calc / _weights_are_normalized_to_one
+BV-18,边界值,知识库（IT-K）,维度权重｜0 / 0.001 / 1 / 合计 1.001,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv18_weight_sum_must_be_one / _zero_weight_allowed_with_warning / _negative_weight_rejected; scoring_boundary::test_bv18_bad_weight_sum_produces_warning / _good_weight_sum_has_no_warning / _zero_weight_dimension_warns
+BV-19,边界值,知识库（IT-K）,分页｜page=0 / 1 / 末页 / 超范围；page_size=0/1/100/101,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv19_paging / test_bv19_offset
+BV-20,边界值,知识库（IT-K）,时间范围｜起>止 / 起=止 / 跨时区,P2,BV,未执行,,,未覆盖,
+BV-21,边界值,知识库（IT-K）,游客配额｜第 2 次测评 / 第 5 次查询 / 第 6 次查询,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_assessment_quota / test_bv21_guest_query_quota
+BV-22,边界值,知识库（IT-K）,短票有效期｜第 59 秒 / 第 61 秒使用,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv22_stream_ticket_issued / test_bv22_expired_ticket_rejected
+BV-23,边界值,知识库（IT-K）,幂等窗口｜第 29 秒 / 第 31 秒同键,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window
+BV-24,边界值,知识库（IT-K）,草稿有效期｜第 29 天 / 第 31 天,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv24_draft_expiry
+BV-25,边界值,知识库（IT-K）,咨询超时｜第 29 分钟 / 第 31 分钟未响应,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv25_consultation_timeout
+BV-26,边界值,知识库（IT-K）,注销期限｜注销后第 14 日 / 第 16 日,P1,BV,未执行,,,未覆盖,
+BV-27,边界值,知识库（IT-K）,认领期限｜第 6 天 / 第 8 天认领,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
+BV-28,边界值,知识库（IT-K）,文件上传｜0 字节 / 50MB / 51MB / 非文档格式,P2,BV,部分执行（自动化）,部分通过,,部分覆盖,storage::test_bv28_knowledge_reject_unsupported_extension（仅扩展名守卫；0 字节/50MB/51MB 未覆盖）
+BV-29,边界值,知识库（IT-K）,并发提交｜同一测评 10 并发提交,P0,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv29_concurrent_submit_single_report
+BV-30,边界值,知识库（IT-K）,空列表｜各类列表无数据,P2,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv30_empty_lists
+EX-01,异常与降级,知识库（IT-K）,短信服务不可用,P1,EX,未执行,,,未覆盖,
+EX-02,异常与降级,知识库（IT-K）,MySQL 连接失败,P1,EX,未执行,,,未覆盖,
+EX-03,异常与降级,知识库（IT-K）,向量库不可用,P0,EX,未执行,,,未覆盖,
+EX-04,异常与降级,知识库（IT-K）,模型超时,P0,EX,未执行,,,未覆盖,
+EX-05,异常与降级,知识库（IT-K）,模型 500,P0,EX,未执行,,,未覆盖,
+EX-06,异常与降级,知识库（IT-K）,模型返回空,P1,EX,未执行,,,未覆盖,
+EX-07,异常与降级,知识库（IT-K）,模型返回乱码/超长,P2,EX,未执行,,,未覆盖,
+EX-08,异常与降级,知识库（IT-K）,SSE 中途断连,P1,EX,未执行,,,未覆盖,
+EX-09,异常与降级,知识库（IT-K）,客户端刷新页面,P1,EX,未执行,,,未覆盖,
+EX-10,异常与降级,知识库（IT-K）,报告降级-状态,P0,EX,未执行,,,未覆盖,
+EX-11,异常与降级,知识库（IT-K）,报告降级-数据,P0,EX,未执行,,,未覆盖,
+EX-12,异常与降级,知识库（IT-K）,报告降级-重生成,P0,EX,未执行,,,未覆盖,
+EX-13,异常与降级,知识库（IT-K）,查询降级,P1,EX,未执行,,,未覆盖,
+EX-14,异常与降级,知识库（IT-K）,看板降级,P1,EX,未执行,,,未覆盖,
+EX-15,异常与降级,知识库（IT-K）,答案不丢失,P0,EX,未执行,,,未覆盖,
+SEC-01,安全与合规,知识库（IT-K）,越权读报告,P0,SEC,未执行,,,未覆盖,
+SEC-02,安全与合规,知识库（IT-K）,越权改资料,P0,SEC,未执行,,,未覆盖,
+SEC-03,安全与合规,知识库（IT-K）,越权批注,P0,SEC,未执行,,,未覆盖,
+SEC-04,安全与合规,知识库（IT-K）,水平越权枚举,P0,SEC,未执行,,,未覆盖,
+SEC-05,安全与合规,知识库（IT-K）,SQL 注入,P0,SEC,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_sql_injection_attempt_is_not_executed
+SEC-06,安全与合规,知识库（IT-K）,XSS,P0,SEC,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv13_special_chars_stored_safely（script 标签被安全存储）
+SEC-07,安全与合规,知识库（IT-K）,JWT 篡改,P0,SEC,未执行,,,未覆盖,
+SEC-08,安全与合规,知识库（IT-K）,令牌泄漏,P0,SEC,未执行,,,未覆盖,
+SEC-09,安全与合规,知识库（IT-K）,游客额度刷取,P0,SEC,部分执行（自动化）,部分通过,,部分覆盖,temporal_rules::test_bv21_guest_query_quota（游客额度上限）
+SEC-10,安全与合规,知识库（IT-K）,敏感信息脱敏,P1,SEC,未执行,,,未覆盖,
+SEC-11,安全与合规,知识库（IT-K）,隐私政策与单独同意,P0,SEC,未执行,,,未覆盖,
+SEC-12,安全与合规,知识库（IT-K）,注销与删除,P0,SEC,未执行,,,未覆盖,
+SEC-13,安全与合规,知识库（IT-K）,免责声明,P0,SEC,未执行,,,未覆盖,
+SEC-14,安全与合规,知识库（IT-K）,审计日志,P1,SEC,未执行,,,未覆盖,
+SEC-15,安全与合规,知识库（IT-K）,传输安全,P1,SEC,未执行,,,未覆盖,
+PERF-01,性能测试,知识库（IT-K）,报告端到端时延,P0,PERF,未执行,,,未覆盖,
+PERF-02,性能测试,知识库（IT-K）,智能查询时延,P0,PERF,未执行,,,未覆盖,
+PERF-03,性能测试,知识库（IT-K）,看板时延,P1,PERF,未执行,,,未覆盖,
+PERF-04,性能测试,知识库（IT-K）,咨询并发,P0,PERF,未执行,,,未覆盖,
+PERF-05,性能测试,知识库（IT-K）,大表查询,P1,PERF,未执行,,,未覆盖,
+PERF-06,性能测试,知识库（IT-K）,代理缓冲,P2,PERF,未执行,,,未覆盖,
+PERF-07,性能测试,知识库（IT-K）,草稿保存,P1,PERF,未执行,,,未覆盖,
+PERF-08,性能测试,知识库（IT-K）,混合负载,P1,PERF,未执行,,,未覆盖,
+UI-01,交互兼容,知识库（IT-K）,移动端报告（<768px）,P1,UI,未执行,,,未覆盖,
+UI-02,交互兼容,知识库（IT-K）,读屏访问,P1,UI,未执行,,,未覆盖,
