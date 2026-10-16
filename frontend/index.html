@@ -591,6 +591,24 @@
           <div id="dispatchResult" style="margin-top:12px"></div>
         </div>
 
+        <!-- 编排试跑：真分派、真执行 -->
+        <div class="card panel" id="agentsOrch" style="margin-bottom:14px">
+          <div class="section-head">
+            <div>
+              <h2>编排试跑（真实分派）</h2>
+              <div class="desc">识别意图 → 规划链路 → <b>真实调用子智能体</b> → 结构化汇总。
+                命中用药/诊断/报告解读/孕婴会在识别阶段直接拒答，一次子智能体都不调用。</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            <input id="orchInput" type="text" placeholder="例如：我想控糖，排一周食谱，再提醒我每天打卡"
+                   style="flex:1;min-width:220px;padding:9px 11px;border:1px solid rgba(128,128,128,.35);border-radius:8px;background:transparent;color:inherit;font:inherit" />
+            <button class="btn" onclick="runOrchestrate(false)">只看识别</button>
+            <button class="btn primary" onclick="runOrchestrate(true)">识别并执行</button>
+          </div>
+          <div id="orchResult" style="margin-top:12px"></div>
+        </div>
+
         <div class="section-head">
           <div><h2>子智能体</h2><div class="desc">由主智能体按需求调度 · 共 <span id="subAgentCount">—</span></div></div>
         </div>

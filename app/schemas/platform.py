@@ -444,6 +444,24 @@ class DispatchReq(BaseModel):
                       examples=["帮我做一周控糖食谱，顺便看下体检报告"])
 
 
+class RouteReq(BaseModel):
+    """意图识别（只识别、不执行）。"""
+    text: str = Field(..., min_length=1, max_length=500,
+                      description="待识别的用户输入",
+                      examples=["高血压患者一周食谱怎么安排"])
+    max_agents: int = Field(3, ge=1, le=6,
+                            description="最多纳入链路的子智能体数量（按链路顺序取前 N）")
+
+
+class OrchestrateReq(BaseModel):
+    """完整编排：识别意图 → 规划链路 → 分派子智能体 → 结构化汇总。"""
+    text: str = Field(..., min_length=1, max_length=500,
+                      description="用户需求；命中医疗干预/诊断/报告解读/孕婴时直接拒答，不分派",
+                      examples=["我想控糖，给我排一周食谱，再提醒我每天打卡"])
+    max_agents: int = Field(3, ge=1, le=6, description="最多分派的子智能体数量")
+    execute: bool = Field(True, description="false 时只出方案不执行（预览用）")
+
+
 # --------------------------------------------------------------------------- #
 # 原型 v2 场景类（宴请 / 旅行 / 大屏方案）
 # --------------------------------------------------------------------------- #

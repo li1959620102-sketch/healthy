@@ -2519,6 +2519,82 @@ async function runDispatch() {
   }
 }
 
+/* ================= 主智能体编排试跑（识别 → 规划 → 分派 → 汇总） ================= */
+async function runOrchestrate(execute) {
+  const input = document.getElementById('orchInput');
+  const out = document.getElementById('orchResult');
+  if (!input || !out) return;
+  const text = (input.value || '').trim();
+  if (!text) { out.innerHTML = '<div class="desc">请先输入一句需求。</div>'; return; }
+  out.innerHTML = '<div class="desc">' + (execute ? '识别并分派执行中…' : '识别中…') + '</div>';
+  try {
+    const d = await API.agents.orchestrate(text, 3, !!execute);
+    const it = (d && d.intent) || {};
+    const plan = (d && d.plan) || [];
+    const steps = (d && d.steps) || [];
+    const res = (d && d.result) || {};
+    let html = '';
+
+    // 1) 意图识别
+    html += '<div class="card" style="padding:12px">'
+      + '<div><span class="badge green">① 意图识别</span> '
+      + (it.blocked
+        ? '<span class="badge">高危拦截</span> ' + esc(it.refuse_reason || '')
+        : '<b>' + esc(it.primary || '—') + '</b> 置信度 '
+          + (it.confidence == null ? '—' : Math.round(it.confidence * 100) + '%')
+          + (it.fallback ? ' <span class="desc">（置信不足，已兜底）</span>' : ''))
+      + '</div>'
+      + '<div class="desc" style="margin-top:6px">' + esc(it.explain || '') + '</div>'
+      + (it.baseline_hit && it.baseline_hit.length
+        ? '<div class="desc">基线信号：' + esc(it.baseline_hit.join('、'))
+          + '（只作为链路基线，不抢主意图）</div>' : '')
+      + '<div class="desc" style="margin-top:4px">分类器：'
+      + esc(it.classifier || '确定性规则分类器') + '</div></div>';
+
+    // 2) 规划
+    html += '<div class="card" style="padding:12px;margin-top:8px">'
+      + '<div><span class="badge green">② 规划链路</span> '
+      + (plan.length ? esc(d.strategy || '') : '高危问题未纳入任何链路') + '</div>'
+      + plan.map(p => '<div class="desc" style="margin-top:6px">· <b>' + esc(p.name)
+        + '</b>（' + esc(p.agent) + '）— ' + esc(p.reason || '') + '</div>').join('')
+      + '</div>';
+
+    // 3) 分派执行
+    if (execute) {
+      html += '<div class="card" style="padding:12px;margin-top:8px">'
+        + '<div><span class="badge green">③ 分派执行</span> '
+        + (steps.length ? steps.length + ' 个子智能体' : '未调用任何子智能体')
+        + ' · 总耗时 ' + esc(d.elapsed_ms == null ? '—' : d.elapsed_ms + 'ms') + '</div>'
+        + steps.map(s => '<div class="desc" style="margin-top:6px">· '
+          + '<span class="badge' + (s.ok ? ' green' : '') + '">'
+          + (s.ok ? '成功' : '失败') + '</span> <b>' + esc(s.agent) + '</b> '
+          + esc(s.elapsed_ms + 'ms') + '<br>'
+          + esc((s.summary || s.note || '').slice(0, 220)) + '</div>').join('')
+        + '</div>';
+
+      // 4) 汇总
+      const refs = res.references || [];
+      html += '<div class="card" style="padding:12px;margin-top:8px">'
+        + '<div><span class="badge green">④ 结构化汇总</span> 成功 '
+        + esc(res.ok_count || 0) + ' · 失败 ' + esc(res.failed_count || 0)
+        + ' · 如实降级 ' + esc(res.degraded_count || 0) + '</div>'
+        + '<div class="desc" style="margin-top:6px">' + esc(res.summary || '') + '</div>'
+        + (refs.length
+          ? '<div class="desc" style="margin-top:6px">引用来源 ' + refs.length + ' 条：'
+            + refs.map(r => esc((r.title || r.source || ('doc#' + r.doc_id)).slice(0, 40)))
+              .join('、') + '</div>'
+          : '')
+        + '<div class="desc" style="margin-top:6px">' + esc(res.citations_note || '') + '</div>'
+        + '</div>';
+    }
+
+    out.innerHTML = html;
+  } catch (e) {
+    out.innerHTML = '<div class="desc">'
+      + esc(e.code === 10001 ? '登录后可使用编排' : e.message) + '</div>';
+  }
+}
+
 /* ================= 个人健康数据分析（I 组看板） ================= */
 async function loadDataAnalysis() {
   await Promise.all([loadTrend(), loadDimsAndRisks(), loadInsight()]);

@@ -401,6 +401,14 @@
       list: function () { return get('/api/v1/agents', true); },
       detail: function (key) { return get('/api/v1/agents/' + key, true); },
       dispatch: function (text) { return post('/api/v1/agents/dispatch', { text: text }, true); },
+      route: function (text, maxAgents) {
+        return post('/api/v1/agents/route',
+          { text: text, max_agents: maxAgents || 3 }, true);
+      },
+      orchestrate: function (text, maxAgents, execute) {
+        return post('/api/v1/agents/orchestrate',
+          { text: text, max_agents: maxAgents || 3, execute: execute !== false }, true);
+      },
       scenes: function () { return get('/api/v1/scenes', true); }
     },
 
