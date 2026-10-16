@@ -62,37 +62,74 @@ def cleanup():
 
 @pytest.fixture(scope="session", autouse=True)
 def residue_watchdog():
-    """会话级兜底：清掉本轮未登记到的 `IT*` 测试用户残留，并把漏网项**打印出来**。
+    """会话级兜底：把本轮回归留下的残留清干净，并把漏网项**打印出来**。
 
-    设计意图是「兜底但绝不静默」：一旦某张表出现漏网，就说明有用例忘了登记 cleanup，
-    这里删掉的同时把表名与行数打出来，让"零残留"成为可验证的结论而不是口头声明。
+    两条防线：
+
+    1) **审计日志用基线快照**（与 scripts/seed_business_data.py 同一套做法）：
+       会话开始记录 operation_log 的 MAX(id)，结束删掉基线之上的所有行。
+       因为审计日志的操作人列叫 `operator_id` 而非 `user_id`，按前缀扫描既挑人也漏项；
+       基线快照不挑操作人，凡是本轮新写的日志一律回收。
+    2) **IT* 测试用户按前缀兜底**：清掉未登记到 cleanup 的合成用户，
+       并把表名与行数打出来——让"零残留"成为可验证的结论而不是口头声明。
+
+    设计意图是「兜底但绝不静默」。
     （2026-10-15 发现：合成用户 user_id 不进 sys_user，而发起测评会自动建 user_profile，
-    每轮回归静默泄漏 3 行；根因已在 test_boundary_api.py 登记清理，本夹具只作最后一道网。）
+    每轮回归静默泄漏 3 行；2026-10-16 发现：原实现把删除放进一个事务，遇到不可删的
+    join view 就整体回滚，兜底长期形同虚设——现改为逐项提交。）
     """
-    yield
     from sqlalchemy import text
 
     from app.utils.db import get_session
 
+    baseline_session = get_session()
+    try:
+        row = baseline_session.execute(
+            text("SELECT COALESCE(MAX(id), 0) FROM operation_log")).fetchone()
+        log_baseline = int(row[0]) if row else 0
+    finally:
+        baseline_session.close()
+
+    yield
+
     session = get_session()
     leaked = {}
+    reclaimed = {}
+
+    def _del(sql: str, key: str, bucket: dict):
+        """单项删除 + 立即提交：任何一项失败都只回滚它自己，不牵连已成功的清理。"""
+        try:
+            n = session.execute(text(sql)).rowcount
+            session.commit()
+            if n:
+                bucket[key] = n
+        except Exception as e:                       # noqa: BLE001
+            session.rollback()
+            print(f"[residue-watchdog] 跳过 {key}：{e!r}")
+
     try:
+        # 防线 1：审计日志按基线回收（不挑操作人，本轮新增一律清）—— 属常规兜底
+        _del(f"DELETE FROM operation_log WHERE id > {log_baseline}",
+             "operation_log", reclaimed)
+
+        # 防线 2：IT* 合成用户按前缀兜底 —— 命中即说明有用例漏登记 cleanup
         tables = [r[0] for r in session.execute(text(
             "SELECT table_name FROM information_schema.columns "
             "WHERE table_schema = DATABASE() AND column_name = 'user_id' "
-            "AND table_name <> 'sys_user'"
+            "AND table_name <> 'sys_user' "
+            "AND table_name IN (SELECT table_name FROM information_schema.tables "
+            "                   WHERE table_schema = DATABASE() "
+            "                   AND table_type = 'BASE TABLE')"
         )).fetchall()]
         for t in tables:
-            n = session.execute(
-                text(f"DELETE FROM `{t}` WHERE user_id LIKE 'IT%'")).rowcount
-            if n:
-                leaked[t] = n
-        session.commit()
+            _del(f"DELETE FROM `{t}` WHERE user_id LIKE 'IT%'", t, leaked)
     except Exception as e:                       # noqa: BLE001
         session.rollback()
         print(f"[residue-watchdog] 兜底清理失败：{e!r}")
     finally:
         session.close()
+    if reclaimed:
+        print(f"[residue-watchdog] 已按基线回收本轮审计日志：{reclaimed}")
     if leaked:
         print(f"[residue-watchdog] 注意：兜底清理了未登记的残留，请补登记 cleanup -> {leaked}")
 
