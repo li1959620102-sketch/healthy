@@ -41,10 +41,11 @@ class KnowledgeFile(Base):
     # 文件状态：active(激活)/inactive(未激活)/archived(归档)等
     status = Column(String(20), comment='文件状态(active/inactive/archived等)')
     # 创建时间
-    created_time = Column(DateTime, comment='创建时间')
+    created_time = Column(DateTime, default=datetime.now, comment='创建时间')
 
     # 更新时间
-    updated_time = Column(DateTime, comment='更新时间')
+    updated_time = Column(DateTime, default=datetime.now, onupdate=datetime.now,
+                          comment='更新时间')
     # 创建者ID
     created_by = Column(Integer, comment='创建者ID')
     # 更新者ID
@@ -58,41 +59,22 @@ class KnowledgeFile(Base):
     embedded_at = Column(DateTime, comment='向量化完成时间')
     chunk_count = Column(Integer, default=0, comment='分块数量')
 
-    def __init__(self, id=None, version_no=None, collection_name=None,
-                 file_name=None, file_type=None, minio_path=None,
-                 chunk_strategy=None, description=None, status=None,
-                 created_time=None, updated_time=None, created_by=None,
-                 updated_by=None):
-        """
-        初始化知识文件对象
-        Args:
-            id: 主键ID，使用UUID格式
-            version_no: 版本号
-            collection_name: 知识库集合名称
-            file_name: 文件名称
-            file_type: 文件类型
-            minio_path: MinIO存储路径
-            chunk_strategy: 文档分块策略
-            description: 文件描述
-            status: 文件状态
-            created_time: 创建时间
-            updated_time: 更新时间
-            created_by: 创建者ID
-            updated_by: 更新者ID
-        """
-        self.id = id
-        self.version_no = version_no
-        self.collection_name = collection_name
-        self.file_name = file_name
-        self.file_type = file_type
-        self.minio_path = minio_path
-        self.chunk_strategy = chunk_strategy
-        self.description = description
-        self.status = status
-        self.created_time = created_time or datetime.now()
-        self.updated_time = updated_time or datetime.now()
-        self.created_by = created_by
-        self.updated_by = updated_by
+    # ⛔ 不要再给这个模型手写 __init__（2026-10-16 移除）。
+    #
+    # 原先这里有一个逐参数手写的 __init__（id/version_no/.../updated_by 共 13 个参数），
+    # V1.1 加列时**只加了 Column 定义、没同步 __init__ 的参数表**，于是
+    # `KnowledgeFile(**file_data)` 里带了 category/source 就抛
+    # `TypeError: __init__() got an unexpected keyword argument 'category'`——
+    # 上传知识文档 `POST /knowledge/docs` 的**成功路径 100% 500**。
+    # 之所以长期没被发现：既有用例 BV-28 只覆盖"扩展名不支持"（在校验处就提前返回了），
+    # 谁也没真正上传成功过一次。
+    #
+    # 交由 SQLAlchemy 声明式基类自动生成 __init__（接受所有映射列）后，
+    # 未来再加列不需要动这个文件；created_time/updated_time 的默认值改由
+    # Column(default=...) 承担（语义也更准确：默认值属于列，不属于构造函数）。
+    #
+    # 若某天必须自定义构造行为，请用 `@reconstructor` 或静态工厂方法，
+    # 不要重新引入白名单式 __init__——那是这类"加列即炸"的复发点。
 
     def __str__(self):
         """

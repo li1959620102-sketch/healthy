@@ -7,7 +7,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.deps import get_current_user, require_role, ROLE_ADMIN, ROLE_DIETITIAN
+from app.core.deps import (
+    get_current_user, require_role, require_approved_dietitian,
+    ROLE_ADMIN, ROLE_DIETITIAN,
+)
 from app.core.errors import BizError, ErrCode
 from app.core.responses import success
 from app.schemas.platform import BindByCodeReq, DietitianApplyReq, DietitianUpdateReq
@@ -41,24 +44,24 @@ async def search(specialty: Optional[str] = Query(None, description="擅长领�
 
 
 @router.post("/me/invite-code", summary="生成绑定邀请码", description="审核通过后生成；绑定成功即失效。")
-async def invite_code(user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+async def invite_code(user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.new_invite_code(user))
 
 
 @router.get("/me/customers", summary="客户列表", description="可传 level 筛选，如 needs_improvement 只看待改善客户；含标签/食养执行率/最近咨询。")
 async def customers(level: Optional[str] = Query(None, description="按最近报告等级筛选"),
-                    user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+                    user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.customers(user, level))
 
 
 @router.get("/me/overview", summary="工作台概览", description="KPI 聚合：管辖客户 / 高风险待跟进 / 今日咨询 / 满意度（原型营养师工作台）。")
-async def overview(user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+async def overview(user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.overview(user))
 
 
 @router.get("/me/customers/export", summary="导出客户报表", description="导出为 CSV / XLSX，入 MinIO 并返回 7 天有效的签名 URL（原型「导出客户报表」）。")
 async def export_customers(fmt: str = Query("csv", description="导出格式 csv / xlsx"),
-                           user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+                           user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.export_customers(user, fmt), message="报表已生成")
 
 
@@ -70,7 +73,7 @@ async def bind(body: BindByCodeReq, user: dict = Depends(get_current_user)):
 @router.delete("/me/customers/{customer_uid}", summary="解除绑定",
                description="营养师解除与指定客户的关系；普通用户调用 /nutritionists/me/unbind 解绑自己的营养师。")
 async def unbind_customer(customer_uid: str,
-                          user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+                          user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.unbind(user, customer_uid), message="已解除绑定")
 
 
@@ -81,7 +84,7 @@ async def unbind_self(user: dict = Depends(get_current_user)):
 
 @router.get("/me/customers/{customer_uid}/reports", summary="客户测评记录", description="仅可查看已绑定给自己（或管理员）的客户报告。")
 async def customer_reports(customer_uid: str,
-                           user: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+                           user: dict = Depends(require_approved_dietitian())):
     return success(data=dietitian_service.customer_reports(user, customer_uid))
 
 

@@ -35,6 +35,29 @@ def _brief_profile(p) -> Dict[str, Any]:
 class DietitianService:
     # ---------------- 资质 ---------------- #
     @staticmethod
+    def ensure_approved(user: dict) -> None:
+        """营养师业务能力门槛：资质未通过审核不得访问客户数据（admin 放行）。
+
+        2026-10-16 补测发现：以下接口原先只校验 `role`，不校验 `audit_status`，
+        导致「已提交资质、尚在待审核」的账号可以直接拉取客户列表/工作台概览/导出报表。
+        资质未通过即无客户数据，但接口一旦放开就绕过了审核这道闸门，故统一在此收口。
+
+        错误码用 DIETITIAN_NOT_FOUND(30001) 而非 PERMISSION_DENIED：
+        语义是"尚不存在合格的营养师身份"，前端据此引导去提交资质/查看驳回原因。
+        """
+        if not user:
+            raise BizError(ErrCode.UNAUTHENTICATED, "请先登录")
+        if str(user.get("role")) == "admin":
+            return
+        with session_scope() as s:
+            prof = DietitianDAO.get_by_user(str(user.get("sub")), session=s)
+            if not prof:
+                raise BizError(ErrCode.DIETITIAN_NOT_FOUND, "尚未提交营养师资质申请")
+            if prof.audit_status != "approved":
+                raise BizError(ErrCode.DIETITIAN_NOT_FOUND,
+                               "营养师资质未通过审核，暂不能访问客户数据")
+
+    @staticmethod
     def apply(user: dict, data: Dict[str, Any]) -> Dict[str, Any]:
         if not user:
             raise BizError(ErrCode.UNAUTHENTICATED, "请先登录")
@@ -251,6 +274,17 @@ class DietitianService:
             payload, f"exports/customers_{name}",
             "text/csv" if fmt == "csv" else
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # 合规 C12 / 用例 IT-N-14：客户数据导出属敏感动作，必须留痕
+        # （导出人 / 格式 / 客户范围 / 产出对象），否则无法审计谁把数据带走了。
+        try:
+            from app.dao.admin_dao import AdminDAO
+
+            AdminDAO.add_log(
+                str(user.get("sub")), user.get("role", ""), "customer.export",
+                "dietitian", str(user.get("sub")),
+                {"format": fmt, "customer_count": len(rows), "object": f"exports/customers_{name}"})
+        except Exception as e:                            # noqa: BLE001
+            logger.warning(f"导出审计留痕失败（不影响导出结果）：{e}")
         return {"total": len(rows), "format": fmt, "url": url, "size": len(payload)}
 
     @staticmethod

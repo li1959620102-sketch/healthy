@@ -6,7 +6,7 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.schemas.platform import (
@@ -79,11 +79,21 @@ async def token_refresh(body: RefreshReq):
     })
 
 
-@router.post("/logout", summary="登出", description="无状态令牌，客户端丢弃即可；服务端预留钩子。")
-async def logout(_: dict = Depends(get_current_user)):
-    # 第一批为无状态 JWT，登出由前端清除令牌实现；
-    # 若后续启用令牌黑名单，此处写入 refresh_token 至黑名单。
-    return success(message="已登出")
+@router.post("/logout", summary="登出",
+             description="把当前访问令牌加入失效名单（TTL=剩余有效期），旧令牌立即不可再用。")
+async def logout(authorization: Optional[str] = Header(None, alias="Authorization"),
+                 _: dict = Depends(get_current_user)):
+    """登出：无状态 JWT 无法"收回"已签发令牌，故显式登记黑名单。
+
+    2026-10-16 补实现（原为"客户端丢弃即可"）：多设备场景下，
+    设备 A 登出后设备 B 上被窃取的令牌仍可用，补测用例 IT-A-08 暴露了该风险。
+    黑名单条目随令牌自然过期自动清理（Redis TTL），不产生长期存储。
+    """
+    from app.utils.token_blacklist import revoke
+
+    token = (authorization or "").partition(" ")[2].strip()
+    revoked = revoke(token)
+    return success(message="已登出", data={"revoked": bool(revoked)})
 
 
 @router.post("/guest", summary="获取游客令牌", description="匿名体验用，30 分钟有效，可发起游客试测。")

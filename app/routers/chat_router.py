@@ -200,13 +200,24 @@ def _stream_response(question: str, agent: str, user: Optional[dict],
     # 会话续接：取（或建）会话 + 历史上下文（异常时退化为单轮问答）
     sid, history = _prepare_session(user, guest_hash, question, session_id)
 
+    # IT-C-13/14：用户是否正处于人工咨询中。转人工后智能入口给出"人工处理中"提示，
+    # 咨询结束（closed/timeout）后自动恢复为 False——前端据此暂停/恢复智能入口。
+    human_pending = False
+    if user:
+        try:
+            from app.services.consultation_service import consultation_service
+            human_pending = consultation_service.has_open(str(user.get("sub")))
+        except Exception as e:                      # noqa: BLE001
+            logger.warning(f"查询人工咨询状态失败（按无人工处理）：{e}")
+
     async def event_gen():
         chunks = []
         refused = False
         reason = ""
         async for ev in chat_query_service.stream(question, agent, history=history):
             if ev["event"] == "start":
-                ev["data"] = dict(ev["data"] or {}, session_id=sid, has_history=bool(history))
+                ev["data"] = dict(ev["data"] or {}, session_id=sid,
+                                  has_history=bool(history), human_pending=human_pending)
             if ev["event"] == "done":
                 refused = ev["data"].get("refused", False)
                 reason = ev["data"].get("reason", "")
@@ -220,6 +231,25 @@ def _stream_response(question: str, agent: str, user: Optional[dict],
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+@router.get("/sessions", summary="智能会话列表",
+            description="登录用户的智能问答会话列表（按最近活动倒序），供历史入口展示。")
+async def list_sessions(limit: int = Query(20, ge=1, le=100),
+                        user: dict = Depends(get_current_user)):
+    s = get_session()
+    try:
+        rows = (s.query(ChatSession).filter(ChatSession.user_id == str(user.get("sub")))
+                .order_by(ChatSession.last_msg_at.desc(), ChatSession.id.desc())
+                .limit(limit).all())
+        return success(data={"items": [{
+            "session_id": r.id,
+            "title": r.title,
+            "message_count": r.message_count,
+            "last_msg_at": r.last_msg_at,
+        } for r in rows], "total": len(rows)})
+    finally:
+        s.close()
+
 
 @router.get("/sessions/latest", summary="最新会话与历史消息",
             description="进入智能体页面时恢复多轮上下文：返回最近一次会话 ID 与最近的消息列表。")
@@ -244,3 +274,48 @@ async def latest_session(user: dict = Depends(get_current_user)):
     except Exception as e:  # noqa: BLE001
         logger.warning(f"读取最新会话失败：{e}")
         return success(data={"session_id": None, "messages": []})
+
+
+@router.get("/sessions/{session_id}/messages", summary="会话历史消息",
+            description="按时间正序返回该会话的完整消息（用户/助手交替）；仅会话本人可见，非本人按 404 处理。")
+async def session_messages(session_id: int, limit: int = Query(200, ge=1, le=1000),
+                           user: dict = Depends(get_current_user)):
+    s = get_session()
+    try:
+        sess = s.query(ChatSession).filter(ChatSession.id == session_id).first()
+        # 与报告/咨询一致：不存在与无权限共用 404，避免通过响应差异枚举他人会话
+        if sess is None or (sess.user_id and str(sess.user_id) != str(user.get("sub"))):
+            raise BizError(ErrCode.RESOURCE_NOT_FOUND, "会话不存在")
+        rows = (s.query(ChatMessage).filter(ChatMessage.session_id == session_id)
+                .order_by(ChatMessage.id.asc()).limit(limit).all())
+        return success(data={
+            "session_id": session_id,
+            "title": sess.title,
+            "items": [{"id": m.id, "role": m.role, "content": m.content,
+                       "refused": bool(m.refused), "created_at": m.created_at} for m in rows],
+            "total": len(rows),
+        })
+    finally:
+        s.close()
+
+
+@router.post("/sessions/{session_id}/transfer-human", summary="转人工",
+             description="把当前智能会话转成人工咨询单，携带来源会话 ID 以便营养师看到上下文（设计_01 §G）。")
+async def transfer_human(session_id: int, body: Optional[dict] = None,
+                         user: dict = Depends(get_current_user)):
+    s = get_session()
+    try:
+        sess = s.query(ChatSession).filter(ChatSession.id == session_id).first()
+        if sess is None or (sess.user_id and str(sess.user_id) != str(user.get("sub"))):
+            raise BizError(ErrCode.RESOURCE_NOT_FOUND, "会话不存在")
+        # 用会话最后一条用户提问作为咨询单的首条消息，人工侧无需用户重复描述
+        last_user = (s.query(ChatMessage)
+                     .filter(ChatMessage.session_id == session_id, ChatMessage.role == "user")
+                     .order_by(ChatMessage.id.desc()).first())
+        question = (body or {}).get("question") or (last_user.content if last_user else "")
+    finally:
+        s.close()
+
+    from app.services.consultation_service import consultation_service
+    data = consultation_service.transfer_from_chat(user, session_id, question)
+    return success(data=data, message="已为你转接人工营养师，请稍候")

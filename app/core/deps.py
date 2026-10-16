@@ -27,7 +27,7 @@ GUEST_ROLE = "guest"
 
 
 def _parse_auth(authorization: Optional[str], allowed_types: tuple[str, ...] = ()) -> Optional[dict]:
-    """从 Authorization: Bearer <token> 解析 payload；格式错误或缺失返回 None。"""
+    """从 Authorization: Bearer <token> 解析 payload；格式错误、已登出或缺失返回 None。"""
     if not authorization:
         return None
     scheme, _, token = authorization.partition(" ")
@@ -36,18 +36,45 @@ def _parse_auth(authorization: Optional[str], allowed_types: tuple[str, ...] = (
     payload = decode_token(token)
     if payload and allowed_types and payload.get("type") not in allowed_types:
         return None
+    if payload:
+        # 登出黑名单：令牌签名合法但已被主动失效（IT-A-08）。
+        # 用函数内导入避免 utils ↔ core 的模块级循环导入。
+        from app.utils.token_blacklist import is_revoked
+        if is_revoked(token):
+            return None
     return payload
+
+
+def _assert_user_active(payload: dict) -> None:
+    """校验令牌对应用户**仍然存在且未被停用**。
+
+    2026-10-16 补测发现：此前鉴权只验签名，不看账号状态，
+    于是"管理员禁用用户"与"用户自己注销"都拦不住已经签发的旧令牌——
+    被禁用的营养师照样能拉客户名单、注销账号照样能读自己的报告
+    （用例 IT-N-10 / IT-AD-01 / IT-U-06 均命中）。
+
+    真实场景中每张令牌都对应一个 sys_user 行；查不到即视为账号已被清理，同样拒绝。
+    这是主键等值查询，开销远低于业务查询本身。
+    """
+    from app.dao.user_dao import UserDAO
+
+    user = UserDAO.get_by_user_id(str(payload.get("sub") or ""))
+    if not user:
+        raise BizError(ErrCode.TOKEN_INVALID, "账号不存在或已注销")
+    if user.status != "active":
+        raise BizError(ErrCode.PERMISSION_DENIED, "账号已被停用")
 
 
 def get_current_user(
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> dict:
-    """解析登录用户；缺失或非法令牌抛 BizError(10001/10003)。"""
+    """解析登录用户；缺失、非法或账号已停用抛 BizError(10001/10003/10005)。"""
     if not authorization:
         raise BizError(ErrCode.UNAUTHENTICATED, "未登录或缺少 Authorization 头")
     payload = _parse_auth(authorization, ("access",))
     if not payload:
         raise BizError(ErrCode.TOKEN_INVALID, "令牌无效或已过期")
+    _assert_user_active(payload)
     return payload
 
 
@@ -80,5 +107,21 @@ def require_role(*roles: str):
     def _dep(payload: dict = Depends(get_current_user)):
         if payload.get("role") not in roles:
             raise BizError(ErrCode.PERMISSION_DENIED, "无权限访问该资源")
+        return payload
+    return _dep
+
+
+def require_approved_dietitian():
+    """营养师业务接口依赖：角色为营养师**且资质已通过审核**（admin 放行）。
+
+    与 require_role 的区别：require_role 只看令牌里的角色字符串，
+    而"是不是合格营养师"取决于后台审核结果（dietitian_profile.audit_status），
+    必须在服务端逐次校验，不能信任客户端身份声明。
+    """
+    def _dep(payload: dict = Depends(require_role(ROLE_DIETITIAN, ROLE_ADMIN))):
+        if payload.get("role") == ROLE_ADMIN:
+            return payload
+        from app.services.dietitian_service import dietitian_service
+        dietitian_service.ensure_approved(payload)
         return payload
     return _dep

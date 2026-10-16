@@ -53,9 +53,10 @@ async def list_mine(status: Optional[str] = Query(None, description="in_progress
     return success(data=AssessmentService.list_mine(user, status=status))
 
 
-@router.post("/guest/claim", summary="游客数据认领", description="注册后认领 7 天内的游客测评数据（评审 M3）。")
+@router.post("/guest/claim", summary="游客数据认领", description="注册后认领 7 天内的游客测评数据；须通过手机号验证码校验，防止游客令牌被冒用（评审 M2/M3）。")
 async def claim_guest(body: ClaimGuestReq, user: dict = Depends(get_current_user)):
-    return success(data=AssessmentService.claim_guest(user, body.guest_token))
+    return success(data=AssessmentService.claim_guest(
+        user, body.guest_token, body.phone, body.verify_code))
 
 
 @router.get("/{record_id}", summary="测评详情", description="返回题目、已答草稿与进度。")
@@ -65,12 +66,12 @@ async def get_assessment(record_id: int, request: Request,
         record_id, user, guest_hash=_guest_hash(request, user)))
 
 
-@router.patch("/{record_id}/answers", summary="保存草稿", description="每答完一页调用一次，实时保存；异常不丢答案（A8）。")
+@router.patch("/{record_id}/answers", summary="保存草稿", description="每答完一页调用一次，实时保存；异常不丢答案（A8）。带 version（上次 saved_at）即启用多端并发保护。")
 async def save_answers(record_id: int, body: SaveAnswersReq, request: Request,
                        user: Optional[dict] = Depends(get_optional_user)):
     return success(data=AssessmentService.save_draft(
         record_id, user, _guest_hash(request, user),
-        body.answers, body.current_page))
+        body.answers, body.current_page, expect_saved_at=body.version))
 
 
 @router.post("/{record_id}/submit", summary="提交测评", description="请求头 Idempotency-Key 必填；规则引擎同步算分并返回评分，分析文本经 SSE 返回。")

@@ -17,17 +17,36 @@ from app.models.mysql.platform import AssessmentTemplate
 
 logger = logging.getLogger("AdminService")
 
-SENSITIVE_PREFIX = ("scoring.", "agent.", "scene.", "alert.", "role.")
+# 需要留痕的配置前缀。`chat.` 是智能体参数（检索阈值直接决定"答不出时是否拒答"），
+# 与 `agent.` 同属 AI 行为开关；此前漏掉导致改拒答阈值不留审计（IT-AD-04 实测暴露）。
+SENSITIVE_PREFIX = ("scoring.", "agent.", "chat.", "scene.", "alert.", "role.")
 
 
 class AdminService:
     # ---------------- 用户 ---------------- #
     @staticmethod
     def users(role: Optional[str] = None, status: Optional[str] = None,
-              keyword: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+              keyword: Optional[str] = None, limit: int = 50,
+              page: Optional[int] = None, page_size: Optional[int] = None) -> Dict[str, Any]:
+        """用户列表。
+
+    分页两种口径并存：传 `page` 走标准分页（越界返回空 items + 真实 total，
+    见 IT-AD-07），只传 `limit` 时保持原来的"取前 N 条"行为，兼容既有调用方。
+    """
         with session_scope() as s:
-            rows = AdminDAO.list_users(role, status, keyword, limit, session=s)
-            return {"items": [u.to_dict() for u in rows], "total": len(rows)}
+            total = AdminDAO.count_users(role, status, keyword, session=s)
+            if page is None:
+                rows = AdminDAO.list_users(role, status, keyword, limit, session=s)
+                return {"items": [u.to_dict() for u in rows], "total": total,
+                        "page": 1, "page_size": limit,
+                        "has_more": len(rows) < limit or limit < total}
+            p = max(1, int(page))
+            size = max(1, int(page_size or limit))
+            rows = AdminDAO.list_users(role, status, keyword, size,
+                                       offset=(p - 1) * size, session=s)
+            return {"items": [u.to_dict() for u in rows], "total": total,
+                    "page": p, "page_size": size,
+                    "has_more": p * size < total}
 
     @staticmethod
     def set_user_status(operator: dict, user_id: str, status: str,
@@ -259,6 +278,50 @@ class AdminService:
     def overview() -> Dict[str, Any]:
         with session_scope() as s:
             return AdminDAO.stats(session=s)
+
+    # ---------------- 注销数据清理任务（合规 D2 / BV-26） ---------------- #
+    @staticmethod
+    def deletion_tasks(state: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+        """注销后的数据清理任务台账，标出**已超期**项。
+
+        合规 D2 要求注销后 15 日内完成 MySQL / 向量库 / MinIO 三处清理。
+        执行侧由离线清理作业负责，但必须有可查询的出口，否则"15 日内清理"
+        只是写入任务表的一句话、无法核实是否兑现（这正是 BV-26 要验的）。
+        超期判定：execute_at 已过且 state 未到 done，即触发告警口径（DELETION_ALERT_DAYS）。
+        """
+        from datetime import datetime
+
+        from app.models.mysql.platform import DataDeletionTask
+
+        now = datetime.now()
+        with session_scope() as s:
+            q = s.query(DataDeletionTask)
+            if state:
+                q = q.filter(DataDeletionTask.state == state)
+            rows = q.order_by(DataDeletionTask.execute_at.asc()).limit(max(1, min(limit, 500))).all()
+            items = []
+            for r in rows:
+                created = r.created_at or r.execute_at
+                # 距注销登记已过天数；用 max(0, …) 避免"刚登记"因毫秒级时间差显示 -1 天
+                elapsed_days = max(0, (now - created).days) if created else None
+                items.append({
+                    "id": r.id, "user_id": r.user_id, "state": r.state,
+                    "scope": r.scope, "execute_at": r.execute_at,
+                    "created_at": r.created_at,
+                    "elapsed_days": elapsed_days,
+                    "overdue": bool(r.execute_at and r.execute_at < now and r.state != "done"),
+                })
+            overdue = [i for i in items if i["overdue"]]
+            return {
+                "items": items,
+                "total": len(items),
+                "summary": {
+                    "pending": sum(1 for i in items if i["state"] == "pending"),
+                    "done": sum(1 for i in items if i["state"] == "done"),
+                    "overdue": len(overdue),
+                    "alert_days": rules.DELETION_ALERT_DAYS,
+                },
+            }
 
     @staticmethod
     def ops_dashboard() -> Dict[str, Any]:

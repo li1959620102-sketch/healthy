@@ -23,13 +23,15 @@ def _ip(request: Request) -> Optional[str]:
         request.client.host if request.client else None)
 
 
-@router.get("/users", summary="用户列表", description="支持按角色、状态、关键字筛选；不返回密文字段。")
+@router.get("/users", summary="用户列表", description="支持按角色、状态、关键字筛选；不返回密文字段。传 page 走标准分页（越界返回空列表 + 真实 total，IT-AD-07），只传 limit 则取前 N 条。")
 async def users(role: Optional[str] = Query(None, description="user/dietitian/admin"),
                 status: Optional[str] = Query(None, description="active/disabled"),
                 keyword: Optional[str] = Query(None, description="账号或姓名模糊匹配"),
                 limit: int = Query(50, ge=1, le=200),
+                page: Optional[int] = Query(None, ge=1, description="页码（传了即启用分页）"),
+                page_size: Optional[int] = Query(None, ge=1, le=200, description="每页条数"),
                 _: dict = Depends(require_role(ROLE_ADMIN))):
-    return success(data=admin_service.users(role, status, keyword, limit))
+    return success(data=admin_service.users(role, status, keyword, limit, page, page_size))
 
 
 @router.put("/users/{user_id}/status", summary="禁用/解封用户", description="状态：active / disabled；操作记入审计日志。")
@@ -109,6 +111,15 @@ async def operation_logs(action: Optional[str] = Query(None, description="按动
                          limit: int = Query(100, ge=1, le=500),
                          _: dict = Depends(require_role(ROLE_ADMIN))):
     return success(data=admin_service.logs(action, limit))
+
+
+@router.get("/deletion-tasks", summary="注销数据清理任务",
+            description="合规 D2：注销后 15 日内须清理 MySQL / 向量库 / MinIO 三处数据。"
+                        "本接口给出任务台账并标出超期项，供运营核查兑现情况。")
+async def deletion_tasks(state: Optional[str] = Query(None, description="pending / done"),
+                         limit: int = Query(200, ge=1, le=500),
+                         _: dict = Depends(require_role(ROLE_ADMIN, ROLE_OPERATOR))):
+    return success(data=admin_service.deletion_tasks(state, limit))
 
 
 @router.get("/dashboard/ops", summary="运营可视化大屏", description="P 组：聚合统计 + 等级分布 + 近 7 日趋势，供大屏展示。")

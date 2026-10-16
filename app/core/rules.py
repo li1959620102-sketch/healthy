@@ -44,6 +44,17 @@ CLAIM_WINDOW_DAYS = 7                # BV-27 游客认领期限
 GUEST_ASSESSMENT_QUOTA = 1           # BV-21 游客测评次数上限
 GUEST_QUERY_QUOTA = 5                # BV-21 游客查询次数上限
 
+# 智能查询并发与缓存（IT-C-03 缓存命中 / IT-C-15 服务繁忙排队反馈）
+# 说明：项目按单进程部署（uvicorn 单实例 + 前置 Nginx），故在进程内做准入与缓存；
+# 多实例部署时这两项应迁移到 Redis（键相同，实现可平替）。
+CHAT_MAX_CONCURRENT = 8              # 同时生成答案的容量；超出即给用户排队提示（不丢请求）
+CHAT_ANSWER_CACHE_TTL = 600          # 高频问题答案缓存 10 分钟
+CHAT_ANSWER_CACHE_MAX = 200          # 缓存条目上限（有界，防内存膨胀）
+
+# 知识库向量化写入的业务场景标记（落 Milvus business_scene 字段，用于按场景筛片段）
+# 原为硬编码 "NRS2002"（旧项目名），会让新写入的片段带着上一代项目名进检索结果。
+KB_BUSINESS_SCENE = "food_health_kb"
+
 # --------------------------------------------------------------------------- #
 # 运营预警阈值（需求 FR-V-10 / 数据字典 system_config）
 # 落库键 `alert.thresholds`（JSON），管理员可在管理后台调整；短信/邮件通知待网关接入。
@@ -315,9 +326,19 @@ def check_answer_text(text: Optional[str], max_len: int = ANSWER_TEXT_MAX) -> Ch
 # --------------------------------------------------------------------------- #
 # BV-11 必答项
 # --------------------------------------------------------------------------- #
-def check_required_answers(questions: Iterable[Dict[str, Any]],
-                           answers: Dict[str, Any]) -> CheckResult:
-    """必答题未作答时不可提交，返回第一条缺失项提示。"""
+def _is_blank(v: Any) -> bool:
+    return v is None or (isinstance(v, str) and v.strip() == "") or v == []
+
+
+def missing_required_questions(questions: Iterable[Dict[str, Any]],
+                               answers: Dict[str, Any]) -> List[Dict[str, str]]:
+    """必答题未作答**清单**（IT-AS-06）。
+
+    为什么返回清单而不是第一条提示：前端提交被拒后要一次性把缺失项高亮出来，
+    只回第一条会让用户"改一题再被拒一次"，十道必答题就要来回十次。
+    """
+    ans = answers if isinstance(answers, dict) else {}
+    missing: List[Dict[str, str]] = []
     for q in questions or []:
         if not isinstance(q, dict):
             continue
@@ -326,10 +347,84 @@ def check_required_answers(questions: Iterable[Dict[str, Any]],
         qid = str(q.get("question_id") or q.get("id") or "")
         if not qid:
             continue
-        v = (answers or {}).get(qid)
-        if v is None or (isinstance(v, str) and v.strip() == "") or v == []:
-            return _err(f"必答题「{q.get('title') or qid}」尚未作答")
+        if _is_blank(ans.get(qid)):
+            missing.append({"question_id": qid, "title": str(q.get("title") or qid)})
+    return missing
+
+
+def check_required_answers(questions: Iterable[Dict[str, Any]],
+                           answers: Dict[str, Any]) -> CheckResult:
+    """必答题未作答时不可提交，返回第一条缺失项提示。"""
+    missing = missing_required_questions(questions, answers)
+    if missing:
+        return _err(f"必答题「{missing[0]['title']}」尚未作答")
     return _ok()
+
+
+# --------------------------------------------------------------------------- #
+# BV-13 答题实时校验（纯本地规则，不调模型）
+# --------------------------------------------------------------------------- #
+def _numeric_checker(q: Dict[str, Any]):
+    """按题干关键字把数值题映射到已有规则函数（身高/体重/年龄）。"""
+    text = " ".join(str(q.get(k) or "") for k in
+                    ("question_id", "key", "title", "unit", "name")).lower()
+    if "身高" in text or "height" in text:
+        return check_height
+    if "体重" in text or "weight" in text:
+        return check_weight
+    if "年龄" in text or "age" in text:
+        return check_age
+    return None
+
+
+def _range_check(value: Any, lo: Any, hi: Any, q: Dict[str, Any]) -> CheckResult:
+    label = str(q.get("title") or q.get("question_id") or "该项")
+    unit = str(q.get("unit") or "")
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return _err(f"{label}必须为数字")
+    if lo is not None and v < float(lo):
+        return _err(f"{label}需不低于 {lo}{unit}")
+    if hi is not None and v > float(hi):
+        return _err(f"{label}需不高于 {hi}{unit}")
+    return _ok(v)
+
+
+def answer_warnings(questions: Iterable[Dict[str, Any]],
+                    answers: Dict[str, Any]) -> List[Dict[str, str]]:
+    """逐题本地校验，产出 warnings（不阻断保存，也不调用模型）。
+
+    用例 IT-AS-05 / A6 的口径是「实时提示、不调模型、≤200ms」：
+    提交答案越界（如身高 500cm）时必须**当次响应**就告诉用户，
+    但又不能因此拒绝保存——否则用户答到一半的草稿会丢。
+
+    校验优先级：
+      1) 题目自带 min/max（模板声明范围，最精确）；
+      2) 题干/单位能识别出身高/体重/年龄时，套用 rules 里的既有区间。
+    数字以外的题型（单选/多选/文本）一律不产生 warning，避免误报。
+    """
+    ans = answers if isinstance(answers, dict) else {}
+    out: List[Dict[str, str]] = []
+    for q in questions or []:
+        if not isinstance(q, dict):
+            continue
+        qid = str(q.get("question_id") or q.get("id") or "")
+        if not qid or qid not in ans:
+            continue
+        val = ans.get(qid)
+        if isinstance(val, (list, dict)) or _is_blank(val):
+            continue
+        lo, hi = q.get("min"), q.get("max")
+        if lo is not None or hi is not None:
+            chk: Optional[CheckResult] = _range_check(val, lo, hi, q)
+        else:
+            fn = _numeric_checker(q)
+            chk = fn(val) if fn is not None else None
+        if chk is None or chk.ok:
+            continue
+        out.append({"question_id": qid, "level": "warn", "message": chk.message})
+    return out
 
 
 # --------------------------------------------------------------------------- #

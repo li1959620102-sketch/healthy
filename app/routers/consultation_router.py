@@ -46,9 +46,9 @@ async def messages(consultation_id: int, limit: int = Query(200, ge=1, le=1000),
     return success(data=consultation_service.messages(user, consultation_id, limit))
 
 
-@router.post("/{consultation_id}/messages", summary="发送消息", description="一期仅文本；已结束的咨询不可发送。")
+@router.post("/{consultation_id}/messages", summary="发送消息", description="一期仅文本：type=image 等非文本类型返回 90001；已结束的咨询不可发送。")
 async def send(consultation_id: int, body: SendMsgReq, user: dict = Depends(get_current_user)):
-    return success(data=consultation_service.send(user, consultation_id, body.content))
+    return success(data=consultation_service.send(user, consultation_id, body.content, body.type))
 
 
 @router.post("/{consultation_id}/close", summary="结束咨询", description="结束后若已有营养师，自动建立绑定关系。")

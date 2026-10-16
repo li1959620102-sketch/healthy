@@ -68,7 +68,19 @@ class SmsService:
 
         # 3) 下发：已配置网关 → 真实短信（失败作废刚写入的码）；未配置 → 演示模式
         if sms_gateway.is_configured():
-            sms_gateway.send_code(phone, code)
+            # 网关是第三方 SDK：网络超时/鉴权失败/限流都会抛异常。
+            # 不兜住就会变成 500，且验证码已写进 Redis —— 用户 60 秒内重试还会
+            # 被自己触发的限频挡住，等于双重伤害。故失败即作废刚写的码并转成
+            # 可理解的业务错误（EX-01）。
+            try:
+                sms_gateway.send_code(phone, code)
+            except BizError:
+                self._clear(h)
+                raise
+            except Exception as e:                       # noqa: BLE001
+                logger.warning("短信网关下发失败（已作废本次验证码）：%s", e, exc_info=True)
+                self._clear(h)
+                raise BizError(ErrCode.SYSTEM_ERROR, "验证码发送失败，请稍后重试")
             redis_client.set(self._k_limit(h), "1", ttl=interval)
             return {"expires_in": ttl, "interval": interval}
 

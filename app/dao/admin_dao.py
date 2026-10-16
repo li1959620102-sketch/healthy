@@ -37,7 +37,7 @@ class AdminDAO:
     @staticmethod
     def list_users(role: Optional[str] = None, status: Optional[str] = None,
                    keyword: Optional[str] = None, limit: int = 50,
-                   session=None) -> List[SysUser]:
+                   offset: int = 0, session=None) -> List[SysUser]:
         own = session is None
         s = session or get_session()
         try:
@@ -49,7 +49,34 @@ class AdminDAO:
             if keyword:
                 like = f"%{keyword}%"
                 q = q.filter(SysUser.username.like(like) | SysUser.real_name.like(like))
-            return q.order_by(SysUser.id.desc()).limit(limit).all()
+            # 深分页靠数据库的 offset/limit 完成：page=5000 由 DB 快速判定越界，
+            # 不把全表拉进内存再切片（IT-AD-07）
+            return q.order_by(SysUser.id.desc()).offset(offset).limit(limit).all()
+        finally:
+            if own:
+                s.close()
+
+    @staticmethod
+    def count_users(role: Optional[str] = None, status: Optional[str] = None,
+                    keyword: Optional[str] = None, session=None) -> int:
+        """筛选条件下的**真实总数**。
+
+        原来把 total 设成"本页返回条数"，前端据此算页数会一直停在第 1 页，
+        超过 limit 的用户永远翻不到。
+        """
+        from sqlalchemy import func
+        own = session is None
+        s = session or get_session()
+        try:
+            q = s.query(func.count(SysUser.id)).filter(SysUser.deleted_at.is_(None))
+            if role:
+                q = q.filter_by(role=role)
+            if status:
+                q = q.filter_by(status=status)
+            if keyword:
+                like = f"%{keyword}%"
+                q = q.filter(SysUser.username.like(like) | SysUser.real_name.like(like))
+            return int(q.scalar() or 0)
         finally:
             if own:
                 s.close()

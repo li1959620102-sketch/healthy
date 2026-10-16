@@ -102,8 +102,18 @@ class AssessmentService:
                 raise BizError(ErrCode.GUEST_NOT_ALLOWED,
                                "游客免费测评次数已用完，注册后可解锁全部功能")
 
+            uid = user.get("sub") if user and user.get("role") != "guest" else None
+
+            # IT-AS-13：同模板已有未完成测评时**不新建**，把那一份原样还给前端，
+            # 由前端引导「继续作答」（用例允许"引导继续作答"这一实现口径）。
+            # 若不拦，用户会在两份草稿之间来回切换，答案各存一半、进度也随之混乱。
+            existing = RecordDAO.find_in_progress(tpl.id, user_id=uid,
+                                                  guest_hash=guest_hash, session=s)
+            if existing is not None:
+                return AssessmentService._start_payload(tpl, existing, resumed=True)
+
             rec = RecordDAO.create({
-                "user_id": (user.get("sub") if user and user.get("role") != "guest" else None),
+                "user_id": uid,
                 "guest_token": guest_hash,
                 "template_id": tpl.id,
                 "template_version": int(tpl.version),
@@ -115,22 +125,29 @@ class AssessmentService:
                 "expire_at": datetime.now() + timedelta(days=DRAFT_EXPIRE_DAYS),
             }, session=s)
 
-            return {
-                "assessment_id": rec.id,
-                "template_snapshot": {
-                    "template_id": tpl.id,
-                    "version": int(tpl.version),
-                    "code": tpl.code,
-                    "name": tpl.name,
-                    "type": tpl.type,
-                    "dimensions": tpl.dimension_config or [],
-                    "questions": _questions_of(tpl),
-                },
-                "profile_snapshot": rec.profile_snapshot,
-                "status": rec.status,
-                "saved_at": rec.last_saved_at,
-                "expire_at": rec.expire_at,
-            }
+            return AssessmentService._start_payload(tpl, rec, resumed=False)
+
+    @staticmethod
+    def _start_payload(tpl: Any, rec: Any, resumed: bool = False) -> Dict[str, Any]:
+        """发起测评的统一响应（新建与"继续作答"共用，避免两处结构漂移）。"""
+        return {
+            "assessment_id": rec.id,
+            "template_snapshot": {
+                "template_id": tpl.id,
+                "version": int(tpl.version),
+                "code": tpl.code,
+                "name": tpl.name,
+                "type": tpl.type,
+                "dimensions": tpl.dimension_config or [],
+                "questions": _questions_of(tpl),
+            },
+            "profile_snapshot": rec.profile_snapshot,
+            "status": rec.status,
+            # 复用时前端据此提示"上次答到第 N 题，是否继续"，而不是当成新测评
+            "resumed": resumed,
+            "saved_at": rec.last_saved_at,
+            "expire_at": rec.expire_at,
+        }
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -153,6 +170,9 @@ class AssessmentService:
                 "questions": questions,
                 "dimensions": (tpl.dimension_config if tpl else []),
                 "profile_snapshot": rec.profile_snapshot,
+                # 多端续答（IT-AS-03）与草稿乐观锁（IT-AS-18）都靠这个值：
+                # B 设备读到的 saved_at 原样回传，服务端才能判断草稿是否被人改过。
+                "saved_at": rec.last_saved_at,
                 "expire_at": rec.expire_at,
                 "submitted_at": rec.submitted_at,
             }
@@ -174,19 +194,31 @@ class AssessmentService:
                 raise BizError(ErrCode.PARAM_INVALID, "草稿已过期，请重新发起测评")
 
             tpl = TemplateDAO.get(rec.template_id, session=s)
-            total = len(_questions_of(tpl)) if tpl else 0
+            questions = _questions_of(tpl)
+            total = len(questions) if tpl else 0
             merged = dict(rec.answers or {})
-            for k, v in (scoring_engine.normalize_answers(answers) or {}).items():
+            incoming = scoring_engine.normalize_answers(answers) or {}
+            for k, v in incoming.items():
                 merged[k] = v
             progress = f"{len(merged)}/{total}" if total else f"{len(merged)}"
+
+            # IT-AS-05 / 需求 A6：本次改动的答案本地即时校验，越界只提示不阻断保存。
+            # 只校验「这次提交的题」，避免把历史遗留的越界答案反复报给用户。
+            warnings = rules.answer_warnings(questions, incoming)
 
             updated = RecordDAO.save_draft(
                 record_id, merged, current_page, progress,
                 expect_saved_at=expect_saved_at, session=s,
             )
             if updated is None:
-                raise BizError(ErrCode.ASSESSMENT_CONFLICT, "草稿已被其他端更新，请刷新后重试")
-            return {"saved_at": updated.last_saved_at, "progress": updated.progress}
+                # IT-AS-18 / 评审 M7 草稿乐观锁：saved_at 对不上说明另一端已写入，
+                # 此时**不能**用本地草稿覆盖远端（会把另一台设备刚答的题抹掉）。
+                # 用例原文写的是 HTTP 409；本项目基线是「HTTP 恒 200 + 业务码」，
+                # 故以 ASSESSMENT_CONFLICT(50004) 表达同一语义。
+                raise BizError(ErrCode.ASSESSMENT_CONFLICT,
+                               "草稿已在其他设备更新，请刷新后重试")
+            return {"saved_at": updated.last_saved_at, "progress": updated.progress,
+                    "warnings": warnings}
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -253,21 +285,33 @@ class AssessmentService:
             rec = RecordDAO.get_for_update(record_id, session=s)
             _assert_owner(rec, user, guest_hash)
 
+            # IT-AS-11 / 设计_01 §E：Idempotency-Key 必填。缺键时**明确拒绝**而不是
+            # 静默放行——否则用户在网络抖动下连点两次提交，就会真的生成两份报告，
+            # 而"提交"这一步还会重置分析文本、重新调用模型，代价不可逆。
+            if not idempotency_key or not str(idempotency_key).strip():
+                raise BizError(ErrCode.PARAM_INVALID,
+                               "缺少 Idempotency-Key 请求头，无法保证重复提交的安全性")
+
             # 幂等（BV-23）：同键 30 秒内重复提交返回首次结果；超出窗口按新一次提交处理。
             # 键上有全局唯一索引，先全局查再写，避免 1062 → 500。
-            if idempotency_key:
-                prev = RecordDAO.get_by_idempotency(idempotency_key, session=s)
-                if prev is not None and prev.id != rec.id:
-                    raise BizError(ErrCode.PARAM_INVALID,
-                                   "幂等键已被其他测评占用，请更换 Idempotency-Key")
-                if (prev is not None and prev.id == rec.id and prev.status == "completed"
-                        and AssessmentService._within_idempotency_window(prev)):
-                    prev_rep = ReportDAO.get_by_record(prev.id, session=s)
-                    if prev_rep:
-                        return AssessmentService._submit_result(prev, prev_rep, idempotent=True)
+            prev = RecordDAO.get_by_idempotency(idempotency_key, session=s)
+            if prev is not None and prev.id != rec.id:
+                raise BizError(ErrCode.PARAM_INVALID,
+                               "幂等键已被其他测评占用，请更换 Idempotency-Key")
+            if (prev is not None and prev.id == rec.id and prev.status == "completed"
+                    and AssessmentService._within_idempotency_window(prev)):
+                prev_rep = ReportDAO.get_by_record(prev.id, session=s)
+                if prev_rep:
+                    return AssessmentService._submit_result(prev, prev_rep, idempotent=True)
 
             if rec.status == "void":
                 raise BizError(ErrCode.PARAM_INVALID, "测评已作废，无法提交")
+            # IT-AS-12 / IT-AS-10：已提交的测评不得再次走提交路径。
+            # 重复提交若放行，会重置报告分析文本并重新调用模型（用户已看到的报告会"变空"）；
+            # 「重新生成分析」是独立动作，走 /report/regenerate（IT-R-08）。
+            if rec.status == "completed":
+                raise BizError(ErrCode.ASSESSMENT_CONFLICT,
+                               "测评已提交，无需重复提交；如需重新生成分析请在报告页点击「重新生成」")
             # BV-24 草稿有效期：过期草稿先作废并提交，再拒绝提交
             if rec.expire_at and rec.expire_at < datetime.now():
                 RecordDAO.void(record_id, session=s)
@@ -279,6 +323,14 @@ class AssessmentService:
             tpl = TemplateDAO.get(rec.template_id, session=s)
             if not tpl:
                 raise BizError(ErrCode.TEMPLATE_NOT_FOUND, "模板不存在")
+
+            # IT-AS-06 / BV-11 必答校验：回传**完整缺失清单**，前端可一次性高亮，
+            # 而不是"改一题被拒一次"。
+            missing = rules.missing_required_questions(_questions_of(tpl), rec.answers)
+            if missing:
+                raise BizError(ErrCode.PARAM_INVALID,
+                               f"还有 {len(missing)} 道必答题未作答，请补全后提交",
+                               data={"missing": missing})
 
             result = scoring_engine.score(tpl, rec.answers)
 
@@ -302,6 +354,8 @@ class AssessmentService:
                 "level": result["level"],
                 "dimension_scores": result["dimension_scores"],
                 "suggestions": result["suggestions"],
+                # 评审 M6：记录生成当时使用的评分规则版本，便于事后追溯
+                "scoring_version": result.get("scoring_version"),
                 "disclaimer": "本内容由 AI 生成，不构成诊疗建议",
             }
             if rep:
@@ -392,19 +446,32 @@ class AssessmentService:
 
     # ------------------------------------------------------------------ #
     @staticmethod
-    def claim_guest(user: Optional[dict], guest_token: Optional[str]) -> Dict[str, Any]:
-        """游客数据认领（评审 M3）：仅 7 天内、未绑定账号的游客记录。"""
+    def claim_guest(user: Optional[dict], guest_token: Optional[str],
+                    phone: Optional[str] = None,
+                    verify_code: Optional[str] = None) -> Dict[str, Any]:
+        """游客数据认领（评审 M3）：仅 7 天内、未绑定账号的游客记录。
+
+        为什么仅凭 `guest_token` 不够（设计评审 M2）：
+        游客令牌存在浏览器本地，共用设备、XSS 或日志泄漏都可能让它落到别人手里，
+        仅凭令牌即可把他人健康测评数据认领到自己账号下。因此要求**同时**
+        通过手机号短信验证码校验，证明操作者能控制一个真实手机号，
+        并在服务端留下可追溯的验证凭据。
+        """
         if not user:
             raise BizError(ErrCode.UNAUTHENTICATED, "请先登录后再认领")
         if not guest_token:
             raise BizError(ErrCode.PARAM_INVALID, "缺少 guest_token")
+        if not phone or not verify_code:
+            raise BizError(ErrCode.PARAM_INVALID,
+                           "认领游客数据需提供手机号与验证码，防止令牌被冒用")
+        from app.services.sms_service import sms_service
+        sms_service.verify_code(phone, verify_code)      # 不通过则抛 20003，认领终止
+
         gh = guest_hash_of(guest_token)
         with session_scope() as s:
             count = RecordDAO.claim(gh, str(user.get("sub")), days=rules.CLAIM_WINDOW_DAYS, session=s)
-            # 报告冗余 user_id 一并补齐，保证趋势与筛选可用
-            if count:
-                recs = RecordDAO.list_guest(gh, days=rules.CLAIM_WINDOW_DAYS, session=s)
-            return {"claimed_assessments": count, "claimed_consultations": 0}
+            return {"claimed_assessments": count, "claimed_consultations": 0,
+                    "verified": True}
 
     # ------------------------------------------------------------------ #
     @staticmethod

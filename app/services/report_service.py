@@ -168,7 +168,8 @@ class ReportService:
             else:
                 # 部分成功时也保留已生成内容，避免用户白等（需求 A8）
                 ReportDAO.mark_basic(report_id, retry_count=self.MAX_RETRY,
-                                     partial_text=text or None, session=s)
+                                     partial_text=text or None,
+                                     references=references or None, session=s)
                 yield {"event": "done", "data": {
                     "state": "basic", "elapsed_ms": elapsed, "disclaimer": DISCLAIMER,
                     "degraded": True, "can_retry": True,
@@ -189,7 +190,11 @@ class ReportService:
             return
 
         last_err: Optional[Exception] = None
-        for attempt in range(self.MAX_RETRY):
+        # 首次 + MAX_RETRY 次重试，重试前分别退避 2/4/8 秒。
+        # 此前写成 range(MAX_RETRY)，实际只重试了 2 次（退避 2/4），
+        # 与本服务文档及用例 IT-R-06 的「重试 3 次、间隔 2/4/8 秒」不符。
+        total_attempts = self.MAX_RETRY + 1
+        for attempt in range(total_attempts):
             try:
                 got = False
                 async for chunk in llm.astream(prompt):
@@ -211,7 +216,7 @@ class ReportService:
                 state["ok"] = False
                 state["reason"] = f"生成中断：{last_err}"
                 return
-            if attempt < self.MAX_RETRY - 1:
+            if attempt < total_attempts - 1:
                 await asyncio.sleep(self.BACKOFF_SECONDS[attempt])
 
         state["ok"] = False
@@ -267,7 +272,9 @@ class ReportService:
         with session_scope() as s:
             rep = ReportDAO.get(report_id, session=s)
             if not rep:
-                raise BizError(ErrCode.REPORT_NOT_FOUND, "报告不存在")
+                # 与"存在但无权限"共用同一错误码：否则拿 50005 / 90002 的差异
+                # 就能判断 ID 是否存在，越权防护形同虚设（评审 M3）。
+                raise BizError(ErrCode.RESOURCE_NOT_FOUND, "报告不存在")
             rec = RecordDAO.get(rep.record_id, session=s)
 
             owner_id = rec.user_id if rec else rep.user_id
@@ -285,10 +292,16 @@ class ReportService:
                 raise BizError(ErrCode.RESOURCE_NOT_FOUND, "报告不存在")
 
             anns = AnnotationDAO.list_by_report(report_id, session=s)
+            latest_ann = max(anns, key=lambda a: a.updated_at or a.created_at) if anns else None
             return {
                 "report_id": rep.id,
                 "assessment_id": rep.record_id,
                 "state": rep.state,
+                # 营养师批注后视为"已修订"：state 枚举表达的是生成状态
+                # （generating/basic/complete/failed），不宜塞入协作状态，
+                # 故单独给出 revised 标记，前端据此展示"已修订"徽标。
+                "revised": bool(anns),
+                "revised_at": (latest_ann.updated_at or latest_ann.created_at) if latest_ann else None,
                 "score": float(rep.score) if rep.score is not None else None,
                 "standardized_score": float(rep.standardized_score) if rep.standardized_score is not None else None,
                 "level": rep.level,
@@ -302,6 +315,7 @@ class ReportService:
                 ],
                 "disclaimer": rep.disclaimer or DISCLAIMER,
                 "model_name": rep.model_name,
+                "scoring_version": rep.scoring_version,
                 "generated_at": rep.generated_at,
                 "elapsed_ms": rep.elapsed_ms,
                 "degraded": rep.state == "basic",
@@ -316,9 +330,11 @@ class ReportService:
         with session_scope() as s:
             rep = ReportDAO.get(report_id, session=s)
             if not rep:
-                raise BizError(ErrCode.REPORT_NOT_FOUND, "报告不存在")
+                raise BizError(ErrCode.RESOURCE_NOT_FOUND, "报告不存在")
             if not ReportService._is_bound_dietitian(dietitian_id, rep.user_id):
-                raise BizError(ErrCode.PERMISSION_DENIED, "只能批注自己客户的报告")
+                # 统一按 404 处理（评审 M3）：若返回 10005，攻击者可用
+                # 「无权限 vs 报告不存在」的差异反推 report_id 是否存在，形成枚举面。
+                raise BizError(ErrCode.RESOURCE_NOT_FOUND, "报告不存在或无权批注")
             ann = AnnotationDAO.upsert(report_id, str(dietitian_id), content.strip(), session=s)
             return {"report_id": report_id, "dietitian_id": ann.dietitian_id,
                     "content": ann.content, "updated_at": ann.updated_at}

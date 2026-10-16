@@ -314,7 +314,10 @@ class RecordDAO:
                 rec.current_page = current_page
             if progress is not None:
                 rec.progress = progress
-            rec.last_saved_at = datetime.now()
+            # 秒级截断再落库：`last_saved_at` 列是 DATETIME（无小数位），MySQL 会把
+            # 微秒四舍五入，而内存对象仍带微秒 ⇒ 读出来的 version 与库里的值对不上，
+            # 多端并发保护会永远误判"草稿已被其他端更新"（IT-AS-18 实测踩到）。
+            rec.last_saved_at = datetime.now().replace(microsecond=0)
             if own:
                 session.commit()
                 session.refresh(rec)
@@ -400,6 +403,33 @@ class RecordDAO:
                     .filter(AssessmentRecord.guest_token == guest_hash,
                             AssessmentRecord.status == "completed")
                     .count())
+        finally:
+            if own:
+                session.close()
+
+    @staticmethod
+    def find_in_progress(template_id: int, user_id: Optional[str] = None,
+                         guest_hash: Optional[str] = None, session=None) -> Optional[AssessmentRecord]:
+        """同一模板下尚未提交的测评（IT-AS-13 用：再次发起时引导继续作答）。
+
+        只认 in_progress：已提交/已作废的都不算"未完成"，
+        否则用户做完一次后就再也发不了新测评。
+        """
+        own = session is None
+        session = session or get_session()
+        try:
+            q = session.query(AssessmentRecord).filter(
+                AssessmentRecord.template_id == template_id,
+                AssessmentRecord.status == "in_progress",
+            )
+            if user_id:
+                q = q.filter(AssessmentRecord.user_id == str(user_id))
+            elif guest_hash:
+                q = q.filter(AssessmentRecord.guest_token == guest_hash,
+                             AssessmentRecord.user_id.is_(None))
+            else:
+                return None
+            return q.order_by(AssessmentRecord.id.desc()).first()
         finally:
             if own:
                 session.close()
@@ -501,8 +531,14 @@ class ReportDAO:
 
     @staticmethod
     def mark_basic(report_id: int, retry_count: int = 0,
-                   partial_text: Optional[str] = None, session=None) -> Optional[AssessmentReport]:
-        """降级为基础版：评分仍在，分析文本可能缺失或只有片段，可重试。"""
+                   partial_text: Optional[str] = None, references: Any = None,
+                   session=None) -> Optional[AssessmentReport]:
+        """降级为基础版：评分仍在，分析文本可能缺失或只有片段，可重试。
+
+        references 一并落库：降级丢的是「模型写的分析文本」，**不丢来源引用**。
+        检索在生成之前就已完成，把已命中的知识库片段留住，
+        用户至少还能顺着来源自查（用例 IT-R-03 要求引用可溯源）。
+        """
         own = session is None
         session = session or get_session()
         try:
@@ -513,6 +549,8 @@ class ReportDAO:
             rep.retry_count = retry_count
             # 断点续传：保留已生成的片段，避免用户白等（需求 A8）
             rep.analysis_text = partial_text
+            if references:
+                rep.references = references
             if own:
                 session.commit()
                 session.refresh(rep)

@@ -227,6 +227,7 @@ class AssessmentReport(Base):
     references = Column(JSON, comment="引用来源")
     disclaimer = Column(String(255), comment="免责声明")
     model_name = Column(String(64), comment="生成模型名")
+    scoring_version = Column(String(32), comment="生成时的评分规则版本（评审 M6）")
     prompt_version = Column(String(32), comment="提示词版本")
     elapsed_ms = Column(Integer, comment="生成耗时")
     retry_count = Column(SmallInteger, default=0, comment="重试次数")

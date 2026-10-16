@@ -165,27 +165,55 @@ class KnowledgeFileDAO:
             return collection
 
     def insert_records(self, collection_name: str, records: List[Dict[str, Any]]):
-        """批量插入记录到Milvus"""
+        """批量插入记录到Milvus。
+
+        ⚠️ 按**字段名**对齐，不再按位置硬塞（2026-10-16 修）。
+
+        原实现写死 11 个位置列表，等于假设"集合结构就是我这张表"。
+        但 `ai_health_kb_v1`（`scripts/build_knowledge_base.py` 用 LangChain 建的）
+        只有 text/vector/file_name/source/category 5 个非自增字段，于是插入直接报
+        `The data doesn't match with schema fields, expect 5 list, got 11`。
+
+        比"报错"更该防的是**错位**：若某天字段数凑巧相等而顺序不同，
+        位置式写入会把 `source` 写成 `minio_path`——库里有数据、不报错，
+        但引用溯源全错，属于最难发现的一类脏数据。按名取字段可以从根上排除。
+        """
         self._ensure_connection()
 
         if not records:
             return
 
         collection = self._get_collection(collection_name)
-        collection.insert([
-            [r.get("text", "") for r in records],
-            [r.get("vector", []) for r in records],
-            [r.get("file_id", "") for r in records],
-            [r.get("file_name", "") for r in records],
-            [r.get("minio_path", "") for r in records],
-            [r.get("chunk_id", "") for r in records],
-            [r.get("created_at", "") for r in records],
-            [r.get("chunk_length", 0) for r in records],
-            [r.get("business_scene", "") for r in records],
-            [r.get("chunk_index", 0) for r in records],
-            [r.get("total_chunks", 0) for r in records]
-        ])
+        fields = [f for f in collection.schema.fields if not getattr(f, "auto_id", False)]
+
+        payload = []
+        for f in fields:
+            payload.append([self._coerce(f, r) for r in records])
+        collection.insert(payload)
         collection.flush()
+
+    @staticmethod
+    def _coerce(field, record: Dict[str, Any]):
+        """按目标字段类型把记录值转成 Milvus 可接受的形式。"""
+        from pymilvus import DataType
+
+        raw = record.get(field.name)
+        if field.dtype == DataType.FLOAT_VECTOR:
+            return raw or []
+        if field.dtype in (DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64):
+            try:
+                return int(raw) if raw is not None else 0
+            except (TypeError, ValueError):
+                return 0
+        if field.dtype in (DataType.FLOAT, DataType.DOUBLE):
+            try:
+                return float(raw) if raw is not None else 0.0
+            except (TypeError, ValueError):
+                return 0.0
+        if field.dtype == DataType.BOOL:
+            return bool(raw)
+        # 字符串类：目标集合缺这个字段时留空，不报错、不猜值
+        return str(raw) if raw is not None else ""
 
     def query_by_category(self, collection_name: str, category: Optional[str] = None,
                           file_name: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -243,6 +271,44 @@ class KnowledgeFileDAO:
                     "created_at": hit.entity.get("created_at", "")
                 })
         return formatted_results
+
+    def delete_by_file(self, collection_name: str, file_name: str,
+                       file_id: Optional[str] = None) -> int:
+        """删除某文档在向量库中的**全部**分块，返回删除前命中的分块数。
+
+        为什么必须存在（IT-K-03 / 评审 M5）：
+        向量库里留着已删除文档的分块，会同时破坏两条红线——
+        ① 管理员撤下一份过时/错误的材料后，AI 仍会引用它（IT-K-04）；
+        ② 引用里带的 `doc_id` 指向 MySQL 中已不存在的记录，用户与审核方
+           再也回溯不到出处（A7-4「来源必须可溯源」）。
+        所以"删文档"必须是「向量 + 元数据」一起删，不能只删一半。
+
+        字段取舍：`ai_health_kb_v1` 这类由 LangChain 建的集合**没有 file_id**，
+        只有 file_name；而 DAO 自建的集合两者都有。
+        因此优先用 file_id（精确），退化用 file_name（可用），
+        并且只引用集合里**确实存在**的字段——否则 Milvus 会直接报字段不存在。
+        """
+        self._ensure_connection()
+        if not utility.has_collection(collection_name):
+            return 0
+
+        collection = Collection(collection_name)
+        names = {f.name for f in collection.schema.fields}
+        expr = None
+        if file_id and "file_id" in names:
+            expr = f'file_id == "{file_id}"'
+        elif "file_name" in names:
+            expr = f'file_name == "{file_name}"'
+        if not expr:
+            logger.warning(f"集合 {collection_name} 无 file_id/file_name 字段，无法按文档定位分块")
+            return 0
+
+        hit = collection.query(expr=expr, output_fields=["count(*)"])
+        n = int(hit[0]["count(*)"]) if hit else 0
+        if n:
+            collection.delete(expr)
+            collection.flush()
+        return n
 
     def count_by_category(self, collection_name: str, category: Optional[str] = None,
                           file_name: Optional[str] = None) -> int:

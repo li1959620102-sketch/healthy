@@ -3,7 +3,7 @@
 
 统一响应外层用 app.schemas.common.ApiResponse 包裹，这里只定义业务载荷。
 """
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Any, Dict, List, Literal
 from pydantic import BaseModel, Field, field_validator
 
@@ -88,6 +88,13 @@ class ProfileUpdateReq(BaseModel):
                                        description=f"体重 kg（{rules.WEIGHT_MIN_KG:g}–{rules.WEIGHT_MAX_KG:g}）")
     diseases: Optional[List[str]] = Field(None, description="疾病史（密文存储）")
     diet_preference: Optional[str] = Field(None, description="饮食偏好，如 素食/少油/忌辛辣")
+    sensitive_consent: Optional[bool] = Field(
+        None, description="敏感个人信息（疾病史）处理单独同意：提交疾病史时必须为 true（合规 D1）")
+
+
+class PhoneChangeReq(BaseModel):
+    phone: str = Field(..., description="新手机号")
+    verify_code: str = Field("", description="新手机号收到的 6 位短信验证码")
 
 
 class PasswordUpdateReq(BaseModel):
@@ -136,17 +143,52 @@ class TrendPoint(BaseModel):
     date: str
     score: Optional[float] = None
     level: Optional[str] = None
+    # 跨模板混在一条折线上时，用户无从判断这些分数是否可比。
+    # 因此每个点都必须自带模板名 + 版本 + 标准化百分制（IT-D-02）。
+    template_id: Optional[int] = None
+    template_name: Optional[str] = None
+    template_version: Optional[int] = None
+    standardized_score: Optional[float] = None
+
+
+class DataTable(BaseModel):
+    """图表的等价数据表（IT-D-07 / 无障碍 B3）。
+
+    折线图对读屏软件不可读，必须同时给出结构化表格 + 文字版结论，
+    否则图表里的信息对一部分用户等于不存在。
+    """
+    columns: List[dict] = []
+    rows: List[dict] = []
 
 
 class DashboardTrendResp(BaseModel):
     template_id: Optional[int] = None
     points: List[TrendPoint]
+    table: Optional[DataTable] = None
+    summary: str = ""
     note: str = "测评数据来源于 E/F 组（第二批），当前为空"
 
 
 class DashboardDimensionsResp(BaseModel):
     dimensions: List[dict] = []
+    table: Optional[DataTable] = None
+    summary: str = ""
     note: str = "维度得分来源于 assessment_report（第二批）"
+
+
+class DashboardAttributionResp(BaseModel):
+    """两次测评的维度归因（IT-D-05）。
+
+    归因结论必须由**规则**算出（维度分差最大项），不得交给模型：
+    「因为你运动不足」这类结论若由模型生成，就是无依据的编造。
+    """
+    base_id: int
+    target_id: int
+    top_dimension: Optional[str] = None
+    deltas: List[dict] = []
+    # 分差并列时全部列出：不做"随便挑一个当结论"，并列本身就是结论的一部分
+    tied_dimensions: List[str] = []
+    summary: str = ""
 
 
 class DashboardInsightResp(BaseModel):
@@ -204,10 +246,14 @@ class StartAssessmentReq(BaseModel):
 class SaveAnswersReq(BaseModel):
     answers: Any = Field(..., description="答案：{'q1':3} 或 [{'question_id':'q1','value':3}]")
     current_page: Optional[int] = Field(None, description="当前页")
+    version: Optional[datetime] = Field(
+        None, description="上次保存返回的 saved_at；传入即启用多端并发保护（评审 M7）")
 
 
 class ClaimGuestReq(BaseModel):
     guest_token: str = Field(..., description="游客令牌")
+    phone: str = Field(..., description="手机号（认领必须通过短信验证码校验，评审 M2）")
+    verify_code: str = Field(..., description="短信验证码")
 
 
 # --------------------------------------------------------------------------- #
@@ -250,6 +296,7 @@ class ConsultCreateReq(BaseModel):
 
 class SendMsgReq(BaseModel):
     content: str = Field(..., description="消息内容（一期仅文本）")
+    type: str = Field("text", description="消息类型；一期仅支持 text，其他值返回 90001（用例 IT-CS-08）")
 
 
 class CloseConsultReq(BaseModel):
@@ -388,3 +435,15 @@ class DashboardLayoutReq(BaseModel):
     theme: Optional[str] = Field(None, description="dark 深色运营 / light 浅色简洁")
     highlight_abnormal: Optional[bool] = Field(None, description="异常高亮")
     layout: Optional[List[Dict[str, Any]]] = Field(None, description="组件布局")
+
+
+class DataExportReq(BaseModel):
+    """个人数据导出请求（IT-U-05 / 合规 D3）。
+
+    `verify_code` 必填：导出的是**全部个人健康数据**，属敏感操作，
+    必须二次验证（与改绑手机号同一口径）。少了这层，任何人拿到登录态
+    就能把一个人的病史、测评、咨询记录整份拖走。
+    """
+    verify_code: str = Field(..., description="短信验证码（二次验证）")
+    fmt: str = Field("csv", description="导出格式 csv / xlsx")
+    scope: str = Field("all", description="导出范围 all / profile / reports / consultations")

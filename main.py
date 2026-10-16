@@ -88,17 +88,14 @@ async def lifespan(app: FastAPI):
 
     # 预热营养师智能体组件（嵌入模型/向量集合/LLM 客户端）：
     # 否则首次提问要现场建连+加载模型，首字延迟高达 9 秒。后台线程执行，不阻断启动。
+    # 预热逻辑收敛到 `chat_query_service.prewarm()`：生产与用例共用同一条路径，
+    # 避免"生产热的、用例测的是冷的"这种口径分叉（用例 IT-C-01/02 实测：
+    # 冷启动 2.4s vs 稳态 0.055s，差 40 倍，是否预热决定用例结论）。
     import threading
 
     def _prewarm():
-        try:
-            from app.services.chat_query_service import chat_query_service
-            ok = chat_query_service._ensure_components()
-            if ok and chat_query_service._embeddings is not None:
-                chat_query_service._embeddings.embed_query("预热")
-            logger.info("智能体组件预热完成（ready=%s）", ok)
-        except Exception as e:
-            logger.warning(f"智能体组件预热失败（不影响服务）：{e}")
+        from app.services.chat_query_service import chat_query_service
+        chat_query_service.prewarm()
 
     threading.Thread(target=_prewarm, daemon=True).start()
     yield
@@ -178,6 +175,26 @@ def _rid(request: Request) -> str:
     return getattr(request.state, "request_id", None) or new_request_id()
 
 
+@app.middleware("http")
+async def https_redirect_middleware(request: Request, call_next):
+    """生产环境强制 HTTPS（设计_01 §1.1 / SEC-15）。
+
+    判定口径：
+      - 仅 `ENV=production` 生效；开发/测试态直接放行，否则本地无法调试；
+      - 反向代理场景看 `X-Forwarded-Proto`（容器内是 http，对外是 https）；
+      - 放行本机回环地址，供健康检查与运维探针使用（不依赖外部证书）。
+    """
+    if settings.ENV == "production":
+        proto = (request.headers.get("X-Forwarded-Proto")
+                 or request.url.scheme or "").split(",")[0].strip().lower()
+        host = request.url.hostname or ""
+        if proto != "https" and host not in ("127.0.0.1", "localhost", "::1"):
+            from fastapi.responses import RedirectResponse
+            secure_url = request.url.replace(scheme="https", port=443)
+            return RedirectResponse(str(secure_url), status_code=308)
+    return await call_next(request)
+
+
 def _metric_path(request: Request) -> str:
     """归一化请求路径，供指标按接口聚合（/reports/123 → /reports/{id}）。"""
     return normalize_path(request.url.path, getattr(request.scope.get("route"), "path", None))
@@ -243,6 +260,26 @@ async def _http_handler(request: Request, exc: HTTPException):
     )
 
 
+@app.exception_handler(Exception)
+async def _unhandled_handler(request: Request, exc: Exception):
+    """未预期异常的**最后一道防线**（EX-02）。
+
+    没有它，任何第三方库冒出来的异常（驱动/网络/序列化）都会走 Starlette 默认
+    处理：返回纯文本 500 + 完整 traceback。那等于把内部结构、SQL 片段、文件路径
+    直接交给客户端——只要有人扫到一个不常用的接口，信息就漏出去了。
+
+    这里统一转成 SYSTEM_ERROR，**响应体里只有一句人话**；
+    traceback 完整写进服务端日志，供排查用（用户拿不到、也不该拿到）。
+    """
+    logger.exception("未处理异常 %s %s", request.method, request.url.path)
+    metrics.record_biz_error(request.method, _metric_path(request), ErrCode.SYSTEM_ERROR)
+    return JSONResponse(
+        status_code=200,
+        content=error(ErrCode.SYSTEM_ERROR, "服务暂时不可用，请稍后重试",
+                      request_id=_rid(request)).model_dump(),
+    )
+
+
 @app.get("/api/v1/ready", summary="依赖就绪检查（探针）", tags=["系统"])
 async def ready():
     """供容器/K8s 探针与运营大屏调用；任一依赖失败仅标记，不影响其他检查。"""
@@ -278,7 +315,16 @@ async def ready():
     except Exception as e:
         checks["minio"] = f"fail: {e}"
     all_ok = all(v == "ok" for v in checks.values())
-    return success(data={"ready": all_ok, "checks": checks})
+    # 智能体预热状态单独报告，**不计入 `ready`**：
+    # `ready` 表达的是"基础设施依赖是否就绪"（探针语义，容器编排据此决定是否放流量）；
+    # 智能体冷启动只是"首个问答会慢"，不是"服务不可用"，混进 ready 会让滚动发布
+    # 因为一个后台预热线程还没跑完就判定实例不健康，反而制造无谓的重启。
+    # 但它必须**可见**——否则运维无从判断"现在打进来的首问会不会吃 2.4s 冷启动"。
+    from app.services.chat_query_service import chat_query_service as _chat_svc
+    agent_state = _chat_svc.warm_state()
+    return success(data={"ready": all_ok, "checks": checks,
+                         "agent": {"state": agent_state,
+                                   "collection": settings.MILVUS_DEFAULT_COLLECTION}})
 
 # ------------------------------
 # 托管前端静态页面（同源访问，无需跨域）

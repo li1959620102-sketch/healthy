@@ -130,9 +130,15 @@ class ConsultationService:
             }
 
     @staticmethod
-    def send(user: dict, consultation_id: int, content: str) -> Dict[str, Any]:
+    def send(user: dict, consultation_id: int, content: str,
+             mtype: str = "text") -> Dict[str, Any]:
         if not user:
             raise BizError(ErrCode.UNAUTHENTICATED, "请先登录")
+        # IT-CS-08（一期范围）：图片/语音/视频消息一期不支持，明确拒绝并给替代方案。
+        # 若静默按文本存下来，前端会以为发成功，营养师却只看到一串空内容。
+        if mtype and mtype != "text":
+            raise BizError(ErrCode.PARAM_INVALID,
+                           "一期暂不支持图片/语音消息，请用文字描述（如食材名、症状与饮食情况）")
         if not content or not content.strip():
             raise BizError(ErrCode.PARAM_INVALID, "消息内容不能为空")
         with session_scope() as s:
@@ -174,8 +180,24 @@ class ConsultationService:
             con = ConsultationDAO.get(consultation_id, session=s)
             if con is None or str(con.user_id) != str(user.get("sub")):
                 raise BizError(ErrCode.RESOURCE_NOT_FOUND, "咨询不存在")
+            # IT-CS-06：满意度只能提交一次。原先的实现是直接覆盖，
+            # 用户误点或重复提交会把已提交的评价静默改掉，运营侧也无法判断哪次是真实反馈。
+            if con.rating is not None:
+                raise BizError(ErrCode.PARAM_INVALID,
+                               f"本次咨询已评价过（{con.rating} 星），不能重复评价")
             updated = ConsultationDAO.rate(consultation_id, rating, comment, session=s)
             return {"consultation_id": consultation_id, "rating": updated.rating}
+
+    @staticmethod
+    def has_open(user_id: str) -> bool:
+        """该用户是否还有未结束的人工咨询（IT-C-13/14：转人工后入口提示、结束后恢复）。"""
+        if not user_id:
+            return False
+        with session_scope() as s:
+            return (s.query(Consultation)
+                    .filter(Consultation.user_id == str(user_id),
+                            Consultation.status.in_(("pending", "in_progress")))
+                    .first()) is not None
 
     @staticmethod
     def transfer_from_chat(user: dict, session_id: int, question: str = "") -> Dict[str, Any]:
