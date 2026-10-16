@@ -567,6 +567,100 @@ P1-1 Milvus 集合仍指向遗留 `nrs2002`（需建平台专属集合并隔离�
 
 ---
 
+## 7.12 批次 4 余项 + P2 技术债清理（2026-10-16 已完成）
+
+> 承接《全栈体检报告 2026-10-15》的 P2 清单与批次 4 未开工项。本轮**只做收口**：
+> 不加新能力组、不动原型范围，把"已声明但没落地"和"删一次就完事"的债一次清完，
+> 并给每条债补**可执行守卫**（见 §7.12.4）——否则债清完还会回流。
+
+### 7.12.1 批次 4-1 邮箱注册（原"未开工"项）
+
+原先只有账号 / 手机号两条注册与登录通道，邮箱是原型与需求里写着、代码里没有的那一条。
+
+| 改动 | 位置 | 说明 |
+| --- | --- | --- |
+| 验证码通道抽象 | `app/services/verify_code_service.py`（新） | 把「生成 → 60s 限频 → 带 TTL 缓存 → 网关发送 → 校验计次 → 一次性失效」抽成与通道无关的 `VerifyCodeService`，短信 / 邮箱各自注入参数；**避免把 SMS 那段复制一遍**（抄一遍就是两套限频口径，迟早对不上） |
+| 短信侧改为薄配置层 | `app/services/sms_service.py`（重写） | 只保留配置与实例化；模块级 `settings` / `sms_gateway` 名字**刻意保留**，因为既有用例在 monkeypatch 它们——改名会让 EX-01 之类的用例静默失效 |
+| 邮箱网关 | `app/utils/mailer.py`（新） | 与 `sms.py` 同契约：`is_configured()` / `missing_config()` / `send_code()`；区分 `SMTPAuthenticationError`（配置错，不能答"稍后重试"）与其他发送失败 |
+| 邮箱通道实例 | `app/services/email_code_service.py`（新） | 独立密钥派生标签 `email-hash-v1` / `email-aes-v1`，与手机号的 `phone-hash-v1` / `phone-aes-v1` **分开**：写错字段会在解密阶段直接暴露，而不是"看起来能跑" |
+| 加密与检索 | `app/utils/security.py` | 新增 `email_hash()` / `encrypt_email()` / `decrypt_email()` / `mask_email()`，把密钥派生收敛到共享的 `_derive_keys(hmac_label, aes_label)` |
+| 邮箱归一化 | `app/core/rules.py::normalize_email` + `check_email` | 先 `strip().lower()` 再哈希，否则 `Alice@Example.com` 与 `alice@example.com` 会建成两个账号 |
+| 注册 / 登录 | `app/routers/auth_router.py`、`app/services/user_service.py` | 注册三通道**互斥**；登录优先级 `username > phone > email` |
+| 错误码 | `app/core/errors.py` | `EMAIL_RATE_LIMITED=60005`、`EMAIL_SEND_FAILED=60006` |
+| 生产守卫 | `app/config.py::validate_runtime_settings` | `ENV=production` 且 `MAIL_DEMO_MODE=true` → **拒绝启动**（与短信演示模式同一口径：演示码绝不能进生产） |
+| 前端 | `frontend/index.html`、`assets/app.js`、`assets/api.js` | 登录/注册页加邮箱签页；"记住账号"改为**按内容**路由（一个输入框三种账号形态） |
+
+用例：`tests/integration/test_email_auth.py`（21 条）。测试邮箱统一用 RFC 2606 保留域 `.invalid`——
+它永不解析、永不投递，即使误配了真实 SMTP 也不会把验证码发给陌生人。
+
+### 7.12.2 批次 4-2 AI 咨询辅助建议（原"未开工"项）
+
+| 改动 | 位置 | 说明 |
+| --- | --- | --- |
+| 非流式补全 | `app/services/chat_query_service.py::complete` | 返回 `Optional[str]`，`None` 表示**模型不可用**（不是空串）——逼调用方如实降级，而不是渲染一个空白建议 |
+| 新列 | `migrations/007_add_message_ai_assisted.sql`（新） | `consultation_message.ai_assisted`：既有表加列，必须手工执行（`create_all` 只建新表） |
+| 建议生成 | `app/services/consultation_service.py::ai_suggestion` | 组装「客户健康档案 + 咨询对话 + 知识库片段 + 营养师补充要点」；高风险诉求**在调用模型之前**整类拒答 |
+| 来源标记 | `send()` / `messages()` | `ai_assisted` **只对营养师发送生效**；客户消息即使传 `true` 也落 0（防串标污染 `ai_ratio`） |
+| 权限 | `app/routers/consultation_router.py` | `require_approved_dietitian()`：仅有 role 不够，须 `audit_status='approved'` |
+| 前端 | 营养师工作台「咨询接待」区 | 待接入队列 / 我的咨询 / 消息流 / AI 生成建议 / 发送 |
+| **修掉的真实缺陷** | `consultation_service.has_open` | 原写 `("pending","in_progress")`——`in_progress` 是 `assessment_status` 的取值，`consultation_status` 的合法域是 `pending/active/closed/timeout`。两个枚举**撞同一个中文词"进行中"**，导致"已接入"的咨询被判成"没有未结束的咨询"，用户可重复发起 |
+
+用例：`tests/integration/test_ai_suggestion_cases.py`（13 条）。
+草稿**不落消息表**是硬约束：否则看板上会出现"客户没收到、系统却记了一条"的幽灵消息。
+
+### 7.12.3 批次 4-3 运营指标口径（原"未开工"项）
+
+补 `dau` / `mau` / `month_assessment` / `ai_ratio` / `template_usage` 五个指标
+（定义见《设计_01》§五，实现见 `app/dao/admin_dao.py`）。三条口径选择值得单独记：
+
+1. **活跃不只认登录**：`last_login_at` 只反映"最后一次登录"，而 access token 2 小时 + 前端自动续期
+   意味着"登录一次用一下午"的人不会再写登录记录。故活跃 = 登录 ∪ 提交测评 ∪ 发起咨询 ∪ 发起对话
+   的 `UNION`（自带去重）。
+2. **`ai_ratio` 分母只含营养师消息**：把客户消息算进分母会把比例压扁。
+3. **模板使用率分母只含"有归属"的记录**：`template_id` 为空的记录混进分母会让所有占比加起来不到 1。
+
+前端：`frontend/index.html` + `assets/app.js::loadOps/renderOpsTemplates`、`frontend/admin.html` 概览页
+（含逐模板占比条与汇总口径）。**无数据一律显示 `—`，不补零**。
+
+用例：`tests/integration/test_ops_metrics_cases.py`（7 条）。
+
+### 7.12.4 P2 技术债清理
+
+| 编号 | 原问题 | 本轮处置 |
+| --- | --- | --- |
+| P2-A | 知识库 service/DAO 5 个**零入口死代码**（`query_knowledge` / `semantic_search` / `query_by_category` / `count_by_category` / `add_single_record`） | **删除**。删前逐项验证：无任何调用点、无 `getattr` 动态派发、无文档引用。它们不止没人用，而且引用的是**不存在的字段**（`chunk_text`）、兜底表达式是 `id != ''`，`add_single_record` 还不写 `text`——真接上也是坏的 |
+| P2-1 | 裸 `except:` ×5 + `print()` ×21 | **核实为已解决**：5 处裸 `except` 全在 `legacy_nrs2002/`（按项目红线隔离保留、不删不修），`app/` 内 `print()` 实为 **0 处**（此前统计把 `fingerprint(` 的字符串误当 `print(`）。新增守卫用例防止回流 |
+| P2-2 | 遗留目录 `app/adapter` / `app/designer` / `app/exceptions` + 6 个空目录 | `adapter` / `designer` 与空目录**已不存在**；`app/exceptions` **仍在被使用**（`user_service` / `main.py` / 单元测试），故**保留**——它承担的是"框架层异常 → 统一响应"的转换，与 `app/core/errors.py` 的业务错误码是两层职责，不是重复实现 |
+| P2-3 | 2 个遗留视图 + 1 张遗留表 | **仅盘点，未删除**（见 §7.12.5） |
+| P2-4 | 前端 96 处 inline `onclick`、无打包 | **维持现状**：前端"原生无构建、同源托管"是已锁定的架构基线（见 §2），为此引入打包链会推翻该基线，收益不抵风险。记为已知取舍 |
+| P2-5 | 死配置与 `.env` 键不一致 | 删掉 7 个**全仓零消费**的键：`MILVUS_URI`（体检报告点名）与一批 Django 残留 `API_HOST` / `API_PORT` / `API_KEY` / `MEDIA_URL` / `MEDIA_ROOT` / `DATA_UPLOAD_MAX_MEMORY_SIZE`；顺带清掉重复的 `BASE_DIR` 赋值与已无用的 `Optional` 导入。`.env` 与 `.env.example` 键集合**已一致**（体验报告里"缺 `SECRET_KEY`/`CORS_ORIGINS`/`SMS_DEMO_MODE`"已不复现）。另外**接上了 `REDIS_MAX_CONNECTIONS`**：该键一直写在 `.env` 里却没人读，连接池上限实际由驱动默认值决定，`.env` 里的数字是一句空话 |
+
+### 7.12.5 未决：遗留视图 / 表与存量残留（需拍板后才动）
+
+盘点结果（**只读，未做任何删除**）：
+
+| 对象 | 类型 | 行数 | 代码引用 |
+| --- | --- | --- | --- |
+| `high_risk_patients` | VIEW | 28 | 无（仅 `purge_test_residue.py` 明确**跳过**） |
+| `latest_assessments` | VIEW | 46 | 无（同上） |
+| `user_health_risk_assessment` | TABLE | 46 | 无（同上） |
+
+三者都是 NRS2002 旧系统对象，与平台数据无关。`scripts/purge_test_residue.py` 早就把它们列入
+`LEGACY_OBJECTS` 并主动跳过——**已被有意排除，不是漏网**。
+
+另查出**存量测试残留**（全部产自 2026-10-16 当天的回归/探测，无一条早于当日）：
+
+```
+悬空用户数据  56 行 / 51 个用户（chat_session 1、operation_log 27、report_annotation 28）
+孤儿子行     199 行（chat_message 74、consultation_message 41、批注 56、日志 27、会话 1）
+测试残留账号   0 个
+```
+
+处置方式已具备：`scripts/purge_test_residue.py`（默认预演，`--apply` 才写库）。
+**但因涉及 DROP/DELETE 且属不可逆操作，本轮未执行，留待明确确认。**
+
+---
+
 ## 8. 原型功能地图（权威基线 · 编码对照表）
 
 > ⚠️ **基线变更（2026-09-10）**：功能范围权威基线已切换为 **`prototype/index_v2.html`**（用户提供的 `原型图.html` 收入）。
