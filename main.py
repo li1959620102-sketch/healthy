@@ -7,11 +7,9 @@ from sqlalchemy import text
 #   会让 LLM 生成 SQL 后直接执行（违反「绝不让 LLM 直连数据库」红线）；同时它们的
 #   __init__ 已注册过一次路由、此处又调一次，造成端点重复注册。
 #   同类能力已由 /api/v1/analytics/**（受控查询模板 + 角色行级权限）承接。
-#   如需恢复：取消下面 4 行 import 注释，并取消文件下方挂载处的注释。
-# from app.routers.chunk_router import ChunkRouter
-# from app.routers.file_handle_router import FileHandleRouter
-# from app.routers.text2sql_router import Text2SqlRouter
-# from app.routers.text2echarts_router import Text2EchartsRouter
+#   2026-10-16 起源码已归档至 legacy_nrs2002/app/**（连同其下游 adapter/designer/chunk_service/
+#   vanna_*/rag_query_service 等 25 个模块），活跃代码树不再保留，故此处的 import 一并删去。
+#   如需恢复：从 legacy_nrs2002/app/routers/ 取回并把父包同路径也一并取回。
 # 第一批 · 函数式路由（A/B/K/G/I）
 from app.routers.auth_router import router as auth_router
 from app.routers.user_router import router as user_router
@@ -110,12 +108,9 @@ app = FastAPI(lifespan=lifespan)
 
 
 # 挂载路由（确保每个路由模块中定义了 router 实例）
-# ⛔ 遗留 4 个 router 已下线（2026-09-10 体检 P0-1/P0-3：零鉴权 + LLM 直连库 + 端点重复注册）
-#    恢复：取消下面 4 行注释，并取消文件顶部对应 import 的注释
-# app.include_router(FileHandleRouter()._register_routes(), prefix="/api/v1/file")
-# app.include_router(ChunkRouter()._register_routes(), prefix="/api/v1/chunks")
-# app.include_router(Text2SqlRouter()._register_routes(), prefix="/api/v1/text2sql")
-# app.include_router(Text2EchartsRouter()._register_routes(), prefix="/api/v1/query")
+# ⛔ 遗留 4 个 router 已下线并归档（2026-09-10 体检 P0-1/P0-3：零鉴权 + LLM 直连库 + 端点重复注册）
+#    2026-10-16：源码连同下游 25 个模块一并移入 legacy_nrs2002/app/**，挂载处整体移除。
+#    恢复：从 legacy_nrs2002/app/routers/ 取回对应 router 与其下游，再重新注册。
 
 # 第一批 · 函数式路由挂载（A 认证 / B 用户 / K 知识库 / G 智能查询 / I 看板）
 app.include_router(auth_router, prefix="/api/v1")
