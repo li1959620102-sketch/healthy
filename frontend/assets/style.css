@@ -280,3 +280,44 @@ h1{font-size:29px;margin:13px 0 8px}h2{font-size:19px;margin:0}h3{font-size:15px
 #tplModal code{background:#f2f5f9;padding:1px 5px;border-radius:4px;font-size:12px}
 #tplQs [data-q] .setting-row{margin:0}
 #crBody textarea{box-sizing:border-box}
+
+/* --------------------------------------------------------------------------- *
+ * 无障碍：动效可关（UI-02）
+ * 页面里有波形条、加载点、照片呼吸灯等**无限循环**动画。前庭功能障碍用户在
+ * 开启这些动效时会出现头晕、恶心（WCAG 2.3.3）。系统级"减少动态效果"偏好
+ * 打开时，一律关掉动画与过渡——这是操作系统级的开关，不能要求用户逐个去改。
+ * --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 波形/加载点改为静态高度：保留"正在处理"的视觉暗示，但不闪动 */
+  .wave i, .typing i { animation: none !important; height: 5px !important; opacity: .6 !important; }
+  .lp-photo { animation: none !important; }
+  .quick:hover { transform: none !important; }
+}
+
+/* 焦点可见：键盘用户必须能看到当前焦点在哪（WCAG 2.4.7） */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------------------
+ * 测评作答分页（BV-10：单页 ≤8 题，超出自动分页）
+ * 200 题的模板一次性铺开会让作答区变成一堵墙，滚动找题、漏题都很实际。
+ * 单页固定 8 题，翻页时答案保留在 AS.answers 里，不丢作答。
+ * --------------------------------------------------------------------------- */
+.pager {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.pager button {
+  min-width: 34px; height: 32px; padding: 0 10px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  color: var(--text); font-size: 13px;
+}
+.pager button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.pager button:disabled { opacity: .45; cursor: not-allowed; }
+.pager button.cur { background: var(--brand); border-color: var(--brand); color: #fff; }
+.pager .pager-info { margin-left: auto; font-size: 12px; color: var(--muted); }

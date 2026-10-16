@@ -138,6 +138,7 @@
             </div>
           </div>
           <div id="questionList"></div>
+          <div class="pager" id="quizPager" style="display:none"></div>
           <div class="hint" id="quizHint">作答会自动保存草稿；未作答的题目按 0 分计入总分。</div>
         </div>
 
@@ -309,6 +310,11 @@
     <h3>健康评分趋势</h3>
     <div class="desc" id="trendMeta">加载中…</div>
     <div class="mini-chart" id="trendChart" style="height:120px;margin-top:10px"></div>
+    <!-- 折线图对读屏软件不可读，这里给出同一份数据的等价表格 + 文字结论 -->
+    <details id="trendTableWrap" style="margin-top:10px">
+      <summary class="desc" style="cursor:pointer">查看数据表（无障碍）</summary>
+      <div id="trendTable" style="margin-top:8px;overflow-x:auto"></div>
+    </details>
   </div>
 
   <div class="grid4" style="margin-top:14px">
@@ -677,6 +683,10 @@
         <div>
           <div id="pfDiseases" class="pf-chips"></div>
           <input id="pfDiseaseOther" placeholder="其他（选填，可留空）" style="margin-top:8px" />
+          <label id="pfConsentWrap" style="display:flex;gap:6px;align-items:flex-start;margin-top:10px;font-size:12px;line-height:1.5;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="pfConsent" style="width:auto;margin:2px 0 0" />
+            <span>我已阅读并<strong>单独同意</strong>《敏感个人信息处理规则》，同意平台为健康风险评估目的处理我的疾病史信息</span>
+          </label>
         </div>
       </div>
       <div class="setting-row" style="grid-template-columns:72px 1fr">

@@ -266,14 +266,21 @@
         return post('/api/v1/assessments', { template_id: templateId, template_version: templateVersion }, true);
       },
       detail: function (id) { return get('/api/v1/assessments/' + id, true); },
-      saveDraft: function (id, answers) { return patch('/api/v1/assessments/' + id + '/answers', { answers: answers }, true); },
+      saveDraft: function (id, answers, version) {
+        var body = { answers: answers };
+        if (version) { body.version = version; }   // 带上次 saved_at → 多端并发保护
+        return patch('/api/v1/assessments/' + id + '/answers', body, true);
+      },
       submit: function (id, idempotencyKey) {
         return request('/api/v1/assessments/' + id + '/submit',
           { method: 'POST', body: {}, auth: true, headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} });
       },
       cancel: function (id) { return post('/api/v1/assessments/' + id + '/cancel', {}, true); },
       regenerateReport: function (id) { return post('/api/v1/assessments/' + id + '/report/regenerate', {}, true); },
-      claimGuest: function (guestToken) { return post('/api/v1/assessments/guest/claim', { guest_token: guestToken }, true); },
+      claimGuest: function (guestToken, phone, verifyCode) {
+        return post('/api/v1/assessments/guest/claim',
+          { guest_token: guestToken, phone: phone, verify_code: verifyCode }, true);
+      },
       reportStream: function (recordId) { return '/api/v1/assessments/' + recordId + '/report/stream'; }
     },
 
@@ -315,6 +322,7 @@
       risks: function () { return get('/api/v1/dashboard/personal/risks', true); },
       trend: function (params) { return get('/api/v1/dashboard/personal/trend' + qs(params), true); },
       dimensions: function () { return get('/api/v1/dashboard/personal/dimensions', true); },
+      attribution: function (params) { return get('/api/v1/dashboard/personal/attribution' + qs(params), true); },
       insight: function () { return get('/api/v1/dashboard/personal/insight', true); }
     },
 

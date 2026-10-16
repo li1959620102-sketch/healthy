@@ -709,7 +709,8 @@ const STATUS_TEXT = { in_progress: '作答中', completed: '已完成', void: '�
 
 let AS = {
   recordId: null, reportId: null, templateId: null,
-  questions: [], answers: {}, stream: null, saveTimer: null
+  questions: [], answers: {}, stream: null, saveTimer: null, savedAt: null,
+  page: 1, pageSize: 8
 };
 
 function showStep(which) {
@@ -761,10 +762,15 @@ async function startAssessment(templateId) {
     AS.reportId = null;
     AS.answers = {};
     const det = await API.assessments.detail(AS.recordId);
+    AS.savedAt = det.saved_at || null;
     renderQuiz(det);
     showStep('asStepQuiz');
     setBadge('作答中', 'orange');
-    toast('测评已发起，共 ' + (det.questions || []).length + ' 题');
+    if (d.resumed) {
+      toast('检测到未完成的测评，已为你恢复到上次进度');
+    } else {
+      toast('测评已发起，共 ' + (det.questions || []).length + ' 题');
+    }
   } catch (e) {
     setBadge('发起失败', 'red');
     toast('发起失败：' + e.message);
@@ -774,15 +780,31 @@ async function startAssessment(templateId) {
 function renderQuiz(det) {
   AS.questions = det.questions || [];
   AS.answers = det.answers || {};
+  AS.page = 1;
   const title = document.getElementById('quizTitle');
   if (title) { title.textContent = '② 作答（共 ' + AS.questions.length + ' 题）'; }
   const list = document.getElementById('questionList');
   if (!list) { return; }
   if (!AS.questions.length) {
     list.innerHTML = '<div class="desc">该模板没有题目，无法作答</div>';
+    renderQuizPager();
     return;
   }
-  list.innerHTML = AS.questions.map(function (q, i) {
+  bindQuizEvents(list);
+  renderQuizPage();
+}
+
+/* 单页只渲染 8 题（BV-10）。答案不随翻页丢弃：
+   翻页前先 collectAnswers() 收进 AS.answers，回来时按 qid 回填 checked。 */
+function renderQuizPage() {
+  const list = document.getElementById('questionList');
+  if (!list) { return; }
+  const total = Math.max(1, Math.ceil(AS.questions.length / AS.pageSize));
+  if (AS.page > total) { AS.page = total; }
+  const from = (AS.page - 1) * AS.pageSize;
+  const slice = AS.questions.slice(from, from + AS.pageSize);
+
+  list.innerHTML = slice.map(function (q, i) {
     const cur = AS.answers[q.question_id];
     let body = '';
     if (q.type === 'number') {
@@ -799,12 +821,56 @@ function renderQuiz(det) {
           '<span>' + esc(o.value) + '</span></label>';
       }).join('') + '</div>';
     }
-    return '<div class="q-item"><div style="margin-bottom:9px"><b>' + (i + 1) + '. ' +
+    return '<div class="q-item"><div style="margin-bottom:9px"><b>' + (from + i + 1) + '. ' +
       esc(q.title || q.question_id) + '</b> <span class="badge">' + esc(q.dimension || '-') +
       '</span></div>' + body + '</div>';
   }).join('');
+  renderQuizPager();
   updateQuizProgress();
+}
 
+function renderQuizPager() {
+  const pager = document.getElementById('quizPager');
+  if (!pager) { return; }
+  const total = Math.ceil(AS.questions.length / AS.pageSize);
+  if (total <= 1) { pager.style.display = 'none'; pager.innerHTML = ''; return; }
+  pager.style.display = '';
+  let html = '<button type="button" data-pg="prev"' + (AS.page === 1 ? ' disabled' : '') +
+    '>上一页</button>';
+  for (let p = 1; p <= total; p++) {
+    /* 页数多时只留首尾 + 当前页附近，避免 200 题 = 25 个按钮糊成一片 */
+    if (total > 9 && p !== 1 && p !== total && Math.abs(p - AS.page) > 2) {
+      if (p === 2 || p === total - 1) { html += '<span class="pager-info" style="margin:0 2px">…</span>'; }
+      continue;
+    }
+    html += '<button type="button" data-pg="' + p + '"' +
+      (p === AS.page ? ' class="cur"' : '') + '>' + p + '</button>';
+  }
+  html += '<button type="button" data-pg="next"' + (AS.page === total ? ' disabled' : '') +
+    '>下一页</button>';
+  html += '<span class="pager-info">第 ' + AS.page + ' / ' + total + ' 页 · 本页 ' +
+    AS.pageSize + ' 题</span>';
+  pager.innerHTML = html;
+  pager.onclick = function (e) {
+    const t = e.target;
+    if (!t || !t.dataset || !t.dataset.pg) { return; }
+    const v = t.dataset.pg;
+    let target = AS.page;
+    if (v === 'prev') { target = AS.page - 1; }
+    else if (v === 'next') { target = AS.page + 1; }
+    else { target = Number(v) || 1; }
+    const tt = Math.max(1, Math.ceil(AS.questions.length / AS.pageSize));
+    if (target < 1 || target > tt) { return; }
+    /* 顺序要紧：必须**先**按当前页收答案，再改 AS.page。
+       反过来（先翻页再收集）会拿新页的切片去读旧页的 DOM，
+       结果是把当前页答案全删掉——翻一次页就丢一次作答。 */
+    collectAnswers();
+    AS.page = target;
+    renderQuizPage();
+  };
+}
+
+function bindQuizEvents(list) {
   list.onchange = function () { collectAnswers(); updateQuizProgress(); scheduleDraftSave(); };
   list.oninput = function (e) {
     if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
@@ -813,25 +879,26 @@ function renderQuiz(det) {
   };
 }
 
+/* 只收**当前页**渲染出来的题，其余题的答案沿用 AS.answers 里的旧值 */
 function collectAnswers() {
-  const out = {};
-  AS.questions.forEach(function (q) {
+  const slice = AS.questions.slice((AS.page - 1) * AS.pageSize, AS.page * AS.pageSize);
+  slice.forEach(function (q) {
+    delete AS.answers[q.question_id];
     if (q.type === 'multi') {
       const picked = [];
       document.querySelectorAll('input[name="' + q.question_id + '"]:checked').forEach(function (el) {
         picked.push(el.value);
       });
-      if (picked.length) { out[q.question_id] = picked; }
+      if (picked.length) { AS.answers[q.question_id] = picked; }
     } else if (q.type === 'number') {
       const el = document.querySelector('input[type=number][data-qid="' + q.question_id + '"]');
-      if (el && el.value !== '') { out[q.question_id] = Number(el.value); }
+      if (el && el.value !== '') { AS.answers[q.question_id] = Number(el.value); }
     } else {
       const el = document.querySelector('input[name="' + q.question_id + '"]:checked');
-      if (el) { out[q.question_id] = el.value; }
+      if (el) { AS.answers[q.question_id] = el.value; }
     }
   });
-  AS.answers = out;
-  return out;
+  return AS.answers;
 }
 
 function updateQuizProgress() {
@@ -850,9 +917,16 @@ function scheduleDraftSave() {
 async function saveDraft() {
   if (!AS.recordId) { return; }
   try {
-    const d = await API.assessments.saveDraft(AS.recordId, AS.answers);
+    const d = await API.assessments.saveDraft(AS.recordId, AS.answers, AS.savedAt);
+    AS.savedAt = d.saved_at || AS.savedAt;
     const el = document.getElementById('quizHint');
-    if (el) { el.textContent = '草稿已自动保存 · 进度 ' + (d.progress || '') + '（未作答题目按 0 分计入）'; }
+    if (el) {
+      const warn = (d.warnings && d.warnings.length)
+        ? '　⚠ ' + d.warnings.map(function (w) { return w.message; }).join('；')
+        : '';
+      el.textContent = '草稿已自动保存 · 进度 ' + (d.progress || '') +
+        '（未作答题目按 0 分计入）' + warn;
+    }
   } catch (e) {
     const el = document.getElementById('quizHint');
     if (el) { el.textContent = '草稿保存失败：' + e.message; }
@@ -1015,7 +1089,7 @@ async function reloadReport() {
 }
 
 function startNewAssessment() {
-  AS.recordId = null; AS.reportId = null; AS.questions = []; AS.answers = {};
+  AS.recordId = null; AS.reportId = null; AS.questions = []; AS.answers = {}; AS.savedAt = null;
   showStep('asStepPick');
   setBadge('就绪', 'green');
   loadTemplates();
@@ -2101,12 +2175,19 @@ async function saveProfile() {
   document.querySelectorAll('#pfDiseases .pf-chip.active').forEach(function (b) { diseases.push(b.dataset.name); });
   const other = (document.getElementById('pfDiseaseOther').value || '').trim();
   if (other) { other.split(/[、,，;；\s]+/).filter(Boolean).forEach(function (x) { diseases.push(x); }); }
+  // 合规 D1：疾病史属敏感个人信息，须单独同意（服务端同样硬校验，前端只是提前拦一层）
+  const consentEl = document.getElementById('pfConsent');
+  if (diseases.length && !(consentEl && consentEl.checked)) {
+    err.textContent = '请先勾选单独同意《敏感个人信息处理规则》，再提交疾病史';
+    return;
+  }
   const payload = {
     diseases: diseases,
     diet_preference: (document.getElementById('pfDiet').value || '').trim()
   };
   if (h !== null) { payload.height_cm = h; }
   if (w !== null) { payload.weight_kg = w; }
+  if (diseases.length) { payload.sensitive_consent = true; }
   err.textContent = '保存中…';
   try {
     await API.users.updateProfile(payload);
@@ -2259,16 +2340,59 @@ async function loadTrend() {
     if (!pts.length) {
       chart.innerHTML = '<div class="desc">暂无趋势数据</div>';
       setText('trendMeta', (d && d.note) || '完成一次测评并生成报告后，这里会显示得分趋势。');
+      renderTrendTable(d);            // 空态也要有表头骨架，结构固定不跳动
       return;
     }
-    const max = Math.max.apply(null, pts.map(p => Number(p.score) || 0)) || 1;
-    chart.innerHTML = pts.map(p =>
-      '<i style="height:' + Math.max(4, Math.round((Number(p.score) || 0) / max * 100)) +
-      '%" title="' + esc(p.date + ' · ' + p.score + (p.level ? ' · ' + p.level : '')) + '"></i>').join('');
-    setText('trendMeta', '共 ' + pts.length + ' 次测评记录（鼠标悬停查看单次得分）');
+    const max = Math.max.apply(null, pts.map(p => Number(p.standardized_score != null ? p.standardized_score : p.score) || 0)) || 1;
+    // 跨模板时用标准化百分制作图，否则不同量表的分数画在一条轴上会误导
+    const crossTemplate = new Set(pts.map(p => p.template_name)).size > 1;
+    chart.innerHTML = pts.map(p => {
+      const v = Number(crossTemplate ? (p.standardized_score != null ? p.standardized_score : p.score) : p.score) || 0;
+      const tip = p.date + ' · ' + (p.template_name || '') +
+        (p.template_version ? ' v' + p.template_version : '') +
+        ' · 百分制 ' + (p.standardized_score == null ? '—' : p.standardized_score) +
+        ' · 等级 ' + (p.level || '—');
+      return '<i style="height:' + Math.max(4, Math.round(v / max * 100)) +
+        '%" title="' + esc(tip) + '"></i>';
+    }).join('');
+    setText('trendMeta', '共 ' + pts.length + ' 次测评记录' +
+      (crossTemplate ? '（跨模板，已统一按标准化百分制对比）' : '') +
+      '（鼠标悬停查看单次得分）');
+    renderTrendTable(d);
   } catch (e) {
     chart.innerHTML = '<div class="desc">' + esc(e.code === 10001 ? '请先登录' : e.message) + '</div>';
   }
+}
+
+/* 趋势的等价数据表：折线图对读屏软件不可读，这张表是同一份数据的无障碍替代 */
+function renderTrendTable(d) {
+  const box = document.getElementById('trendTable');
+  if (!box) return;
+  const tbl = d && d.table;
+  const cols = (tbl && tbl.columns) || [
+    { key: 'date', name: '测评日期' }, { key: 'template_name', name: '模板' },
+    { key: 'template_version', name: '模板版本' }, { key: 'score', name: '总分' },
+    { key: 'standardized_score', name: '标准化百分制' }, { key: 'level', name: '等级' }
+  ];
+  const rows = (tbl && tbl.rows) || [];
+  let html = '<table class="table"><caption>测评得分趋势数据表</caption><thead><tr>';
+  cols.forEach(c => { html += '<th scope="col">' + esc(c.name) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  if (!rows.length) {
+    html += '<tr><td colspan="' + cols.length + '" class="desc">暂无记录</td></tr>';
+  } else {
+    rows.forEach(r => {
+      html += '<tr>';
+      cols.forEach(c => {
+        const v = r[c.key];
+        html += '<td>' + esc(v === null || v === undefined || v === '' ? '—' : String(v)) + '</td>';
+      });
+      html += '</tr>';
+    });
+  }
+  html += '</tbody></table>';
+  const sum = (d && d.summary) || '';
+  box.innerHTML = html + (sum ? '<div class="desc" style="margin-top:6px">' + esc(sum) + '</div>' : '');
 }
 
 async function loadDimsAndRisks() {
@@ -2283,6 +2407,27 @@ async function loadDimsAndRisks() {
         ? dims.map(x => '<div class="desc" style="margin:4px 0">' + esc(x.name || x.key) +
           '：<b>' + esc(x.score) + '</b>' + (x.level_name ? ' <span class="badge">' + esc(x.level_name) + '</span>' : '') + '</div>').join('')
         : '<div class="desc">' + esc((d && d.note) || '暂无维度得分') + '</div>';
+      // 文字版结论 + 等价表格（IT-D-07）：图之外的第二条读取路径
+      const tbl = (d && d.table) || { columns: [], rows: [] };
+      let html = '';
+      if ((d && d.summary)) html += '<div class="desc" style="margin-top:8px">' + esc(d.summary) + '</div>';
+      html += '<table class="table" style="margin-top:8px"><thead><tr>';
+      (tbl.columns || []).forEach(c => { html += '<th scope="col">' + esc(c.name) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      if (!(tbl.rows || []).length) {
+        html += '<tr><td colspan="' + Math.max(1, (tbl.columns || []).length) + '" class="desc">暂无数据</td></tr>';
+      } else {
+        tbl.rows.forEach(r => {
+          html += '<tr>';
+          (tbl.columns || []).forEach(c => {
+            const v = r[c.key];
+            html += '<td>' + esc(v === null || v === undefined || v === '' ? '—' : String(v)) + '</td>';
+          });
+          html += '</tr>';
+        });
+      }
+      html += '</tbody></table>';
+      dimBox.innerHTML += html;
     }
   } catch (e) { if (dimBox) dimBox.innerHTML = '<div class="desc">' + esc(e.message) + '</div>'; }
   // 风险
