@@ -33,7 +33,9 @@ from app.routers.notification_router import router as notification_router
 from app.routers.analytics_router import router as analytics_router
 from app.routers.scene_router import banquet_router, ocr_router, travel_router
 from app.routers.digital_human_router import router as digital_human_router
+from app.routers.ops_router import router as ops_router
 from app.utils.db import init_tables, db_manager
+from app.core.metrics import install_metrics, metrics, normalize_path
 from app.services.user_service import UserService
 from app.core.errors import BizError, ErrCode, http_to_code
 from app.core.responses import success, error, new_request_id
@@ -105,6 +107,9 @@ async def lifespan(app: FastAPI):
 # 创建 FastAPI 实例并绑定生命周期
 app = FastAPI(lifespan=lifespan)
 
+# 运行指标采集（监控）：统计调用量 / 错误率 / 延迟分位，纯内存、零外部依赖
+install_metrics(app)
+
 
 
 # 挂载路由（确保每个路由模块中定义了 router 实例）
@@ -137,6 +142,8 @@ app.include_router(banquet_router, prefix="/api/v1")
 app.include_router(travel_router, prefix="/api/v1")
 app.include_router(ocr_router, prefix="/api/v1")
 app.include_router(digital_human_router, prefix="/api/v1")
+# 运维监控（P 运维指标 / 压测观测）
+app.include_router(ops_router, prefix="/api/v1")
 # 健康检查端点
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -171,8 +178,14 @@ def _rid(request: Request) -> str:
     return getattr(request.state, "request_id", None) or new_request_id()
 
 
+def _metric_path(request: Request) -> str:
+    """归一化请求路径，供指标按接口聚合（/reports/123 → /reports/{id}）。"""
+    return normalize_path(request.url.path, getattr(request.scope.get("route"), "path", None))
+
+
 @app.exception_handler(BizError)
 async def _biz_handler(request: Request, exc: BizError):
+    metrics.record_biz_error(request.method, _metric_path(request), exc.code)
     return JSONResponse(
         status_code=exc.http_status,
         content=error(exc.code, exc.message, exc.data, _rid(request)).model_dump(),
@@ -181,9 +194,11 @@ async def _biz_handler(request: Request, exc: BizError):
 
 @app.exception_handler(BaseAPIException)
 async def _base_handler(request: Request, exc: BaseAPIException):
+    code = http_to_code(exc.status_code)
+    metrics.record_biz_error(request.method, _metric_path(request), code)
     return JSONResponse(
         status_code=200,
-        content=error(http_to_code(exc.status_code), exc.detail, request_id=_rid(request)).model_dump(),
+        content=error(code, exc.detail, request_id=_rid(request)).model_dump(),
     )
 
 
@@ -210,6 +225,7 @@ def _sanitize_validation_errors(errors) -> list:
 
 @app.exception_handler(RequestValidationError)
 async def _validation_handler(request: Request, exc: RequestValidationError):
+    metrics.record_biz_error(request.method, _metric_path(request), ErrCode.PARAM_INVALID)
     return JSONResponse(
         status_code=200,
         content=error(ErrCode.PARAM_INVALID, "参数校验失败",
@@ -219,9 +235,11 @@ async def _validation_handler(request: Request, exc: RequestValidationError):
 
 @app.exception_handler(HTTPException)
 async def _http_handler(request: Request, exc: HTTPException):
+    code = http_to_code(exc.status_code)
+    metrics.record_biz_error(request.method, _metric_path(request), code)
     return JSONResponse(
         status_code=200,
-        content=error(http_to_code(exc.status_code), exc.detail or "error", request_id=_rid(request)).model_dump(),
+        content=error(code, exc.detail or "error", request_id=_rid(request)).model_dump(),
     )
 
 

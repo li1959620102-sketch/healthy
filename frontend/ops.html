@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运维监控 · AI智参平台</title>
+<style>
+  :root{
+    --bg:#f4f6f5; --panel:#ffffff; --line:#e3e8e5; --text:#1d2b26; --muted:#6b7d76;
+    --brand:#2f7d67; --brand-soft:#e8f2ee; --warn:#b5721a; --danger:#c0392b; --ok:#2f9e6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;font-size:14px}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 22px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px}
+  header .spacer{flex:1}
+  button{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;
+    padding:6px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--brand);color:var(--brand)}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.primary:hover{opacity:.9;color:#fff}
+  label.switch{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;cursor:pointer}
+  main{padding:18px 22px 40px;max-width:1320px;margin:0 auto}
+  .banner{border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;display:none}
+  .banner.err{display:block;background:#fdecea;border:1px solid #f5c6c1;color:var(--danger)}
+  .banner.info{display:block;background:var(--brand-soft);border:1px solid #cfe4dc;color:var(--brand)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:24px;font-weight:600;line-height:1.15}
+  .card .x{color:var(--muted);font-size:11px;margin-top:4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .panel h2{font-size:14px;margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .panel h2 .tag{font-size:11px;font-weight:400;color:var(--muted);background:var(--bg);
+    border:1px solid var(--line);border-radius:20px;padding:1px 8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfa}
+  td.path{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;border-radius:20px;padding:1px 9px;font-size:12px;border:1px solid transparent}
+  .pill.ok{background:#e9f7f0;color:var(--ok);border-color:#c9e9da}
+  .pill.bad{background:#fdecea;color:var(--danger);border-color:#f5c6c1}
+  .pill.warn{background:#fdf3e3;color:var(--warn);border-color:#f0dcbb}
+  .bars{display:grid;gap:8px}
+  .bar{display:grid;grid-template-columns:56px 1fr 74px;align-items:center;gap:10px;font-size:12px}
+  .bar .track{background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
+  .bar .fill{height:100%;background:linear-gradient(90deg,#7fc3ab,var(--brand));border-radius:6px;transition:width .3s}
+  .bar .val{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px}
+  .chip b{color:var(--danger)}
+  .deps{display:flex;gap:10px;flex-wrap:wrap}
+  .dep{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#c9d3cf}
+  .dot.ok{background:var(--ok)}.dot.bad{background:var(--danger)}
+  .muted{color:var(--muted)}
+  .empty{color:var(--muted);padding:12px 2px;font-size:13px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:8px 0 0}
+  @media (max-width:640px){ header{padding:12px 14px} main{padding:14px} .card .v{font-size:20px} }
+</style>
+</head>
+<body>
+<header>
+  <h1>运维监控</h1>
+  <span class="sub">AI智参平台 · 药食同源健康管理</span>
+  <span class="spacer"></span>
+  <label class="switch"><input type="checkbox" id="auto" checked> 自动刷新(5s)</label>
+  <button id="btnRefresh" class="primary">立即刷新</button>
+  <button id="btnReset">清零计数</button>
+</header>
+
+<main>
+  <div id="banner" class="banner"></div>
+
+  <div class="grid" id="kpis"></div>
+
+  <div class="panel">
+    <h2>依赖就绪 <span class="tag">GET /api/v1/ready</span></h2>
+    <div class="deps" id="deps"><span class="empty">加载中…</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>端到端延迟分布 <span class="tag">近端延迟样本</span></h2>
+    <div class="bars" id="latBars"><span class="empty">加载中…</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>接口调用排行 <span class="tag" id="routesTag">—</span></h2>
+    <div id="routesWrap"><span class="empty">加载中…</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>业务错误码分布 <span class="tag">HTTP 200 但 code ≠ 0</span></h2>
+    <div class="chips" id="bizCodes"><span class="empty">暂无</span></div>
+  </div>
+
+  <footer id="ts"></footer>
+</main>
+
+<script src="/assets/api.js"></script>
+<script>
+(function () {
+  var API = window.API;
+  var timer = null;
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function n(v){ return (v === null || v === undefined) ? '—' : v; }
+  function showBanner(kind, msg){ var b=document.getElementById('banner'); b.className='banner '+kind; b.textContent=msg; }
+  function hideBanner(){ var b=document.getElementById('banner'); b.className='banner'; b.textContent=''; }
+
+  function kpi(label, value, extra){
+    return '<div class="card"><div class="k">'+label+'</div><div class="v">'+value+'</div>'
+         + (extra ? '<div class="x">'+extra+'</div>' : '') + '</div>';
+  }
+
+  function renderKpis(d){
+    var p=d.process||{}, r=d.requests||{}, l=d.latency_ms||{};
+    var rate=(r.error_rate*100).toFixed(2)+'%';
+    var rateCls = r.error_rate>0.05 ? 'style="color:var(--danger)"' : (r.error_rate>0 ? 'style="color:var(--warn)"' : '');
+    var html = '';
+    html += kpi('累计请求', n(r.total), '平均 '+n(r.rps_avg)+' req/s');
+    html += kpi('错误率', '<span '+rateCls+'>'+rate+'</span>', 'HTTP '+n(r.http_errors)+' · 业务 '+n(r.biz_errors));
+    html += kpi('P95 延迟', n(l.p95_ms)+' ms', 'P99 '+n(l.p99_ms)+' ms · 均值 '+n(l.avg)+' ms');
+    html += kpi('运行时长', fmtDur(d.uptime_seconds), '样本 '+n(l.samples));
+    html += kpi('进程内存', n(p.rss_mb)+' MB', '线程 '+n(p.threads)+' · CPU '+n(p.cpu_percent)+'%');
+    html += kpi('并发在途', n(r.inflight)+' / 峰值 '+n(r.max_inflight), '路由维度 '+n(d.routes_total)+' 个');
+    document.getElementById('kpis').innerHTML = html;
+  }
+
+  function fmtDur(s){
+    s = Math.floor(s||0);
+    var h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60;
+    return (h?h+'h ':'') + (h||m?m+'m ':'') + ss+'s';
+  }
+
+  function renderDeps(d){
+    var c=(d&&d.checks)||{};
+    var keys=['mysql','redis','minio','milvus'];
+    if(!keys.some(function(k){return k in c;})){ document.getElementById('deps').innerHTML='<span class="empty">无探针数据</span>'; return; }
+    document.getElementById('deps').innerHTML = keys.map(function(k){
+      var v = c[k]||'unknown', ok = (v==='ok');
+      return '<div class="dep"><span class="dot '+(ok?'ok':'bad')+'"></span><b>'+k+'</b>'
+           + '<span class="muted">'+esc(ok?'ok':v)+'</span></div>';
+    }).join('');
+  }
+
+  function renderLatency(d){
+    var l=d.latency_ms||{};
+    var rows=[['P50',l.p50||0],['P90',l.p90||0],['P95',l.p95||0],['P99',l.p99||0],['Max',l.max||0]];
+    var max=Math.max.apply(null, rows.map(function(r){return r[1];})) || 1;
+    document.getElementById('latBars').innerHTML = rows.map(function(r){
+      var w=Math.max(2, Math.round(r[1]/max*100));
+      return '<div class="bar"><span class="muted">'+r[0]+'</span>'
+           + '<div class="track"><div class="fill" style="width:'+w+'%"></div></div>'
+           + '<span class="val">'+r[1]+' ms</span></div>';
+    }).join('');
+  }
+
+  function renderRoutes(d){
+    var rows=d.routes||[];
+    document.getElementById('routesTag').textContent = 'TOP ' + rows.length + ' / 共 ' + n(d.routes_total);
+    if(!rows.length){ document.getElementById('routesWrap').innerHTML='<span class="empty">暂无调用记录</span>'; return; }
+    var head='<table><thead><tr><th>方法</th><th>路径</th><th class="num">调用</th>'
+           + '<th class="num">错误</th><th class="num">错误率</th><th class="num">均值</th>'
+           + '<th class="num">P95</th><th class="num">最大</th></tr></thead><tbody>';
+    var body=rows.map(function(r){
+      var er=r.error_rate, cls = er>0.05?'bad':(er>0?'warn':'ok');
+      return '<tr><td>'+esc(r.method)+'</td><td class="path">'+esc(r.path)+'</td>'
+           + '<td class="num">'+r.count+'</td><td class="num">'+r.errors+'</td>'
+           + '<td class="num"><span class="pill '+cls+'">'+(er*100).toFixed(1)+'%</span></td>'
+           + '<td class="num">'+r.avg_ms+'</td><td class="num">'+r.p95_ms+'</td><td class="num">'+r.max_ms+'</td></tr>';
+    }).join('');
+    document.getElementById('routesWrap').innerHTML = head+body+'</tbody></table>';
+  }
+
+  function renderBizCodes(d){
+    var codes=d.biz_error_codes||{};
+    var keys=Object.keys(codes);
+    if(!keys.length){ document.getElementById('bizCodes').innerHTML='<span class="empty">暂无</span>'; return; }
+    document.getElementById('bizCodes').innerHTML = keys.map(function(k){
+      return '<span class="chip">code <b>'+esc(k)+'</b> × '+codes[k]+'</span>';
+    }).join('');
+  }
+
+  function load(){
+    Promise.all([
+      API.ops.metrics(),
+      API.system.ready().catch(function(){ return null; })
+    ]).then(function(res){
+      hideBanner();
+      renderKpis(res[0]); renderLatency(res[0]); renderRoutes(res[0]); renderBizCodes(res[0]);
+      renderDeps(res[1] && res[1].data);
+      document.getElementById('ts').textContent = '最后更新 ' + new Date().toLocaleTimeString();
+    }).catch(function(e){
+      var code = e && e.code;
+      if(code===10001||code===10003||code===10005){
+        showBanner('info','需要管理员/运营身份：请先在主站以管理员账号登录（同一浏览器会话），再回到本页。');
+      } else {
+        showBanner('err','读取指标失败：' + ((e && e.message) || e));
+      }
+      document.getElementById('kpis').innerHTML='';
+      document.getElementById('routesWrap').innerHTML='<span class="empty">无数据</span>';
+    });
+  }
+
+  function setAuto(on){
+    if(timer){ clearInterval(timer); timer=null; }
+    if(on){ timer = setInterval(load, 5000); }
+  }
+
+  document.getElementById('btnRefresh').addEventListener('click', load);
+  document.getElementById('btnReset').addEventListener('click', function(){
+    API.ops.resetMetrics().then(function(){ load(); })
+      .catch(function(e){ showBanner('err','清零失败：'+((e&&e.message)||e)); });
+  });
+  document.getElementById('auto').addEventListener('change', function(e){ setAuto(e.target.checked); });
+
+  load(); setAuto(true);
+})();
+</script>
+</body>
+</html>

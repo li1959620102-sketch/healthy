@@ -464,6 +464,12 @@
     system: {
       health: function () { return get('/api/health'); },
       ready: function () { return get('/api/v1/ready'); }
+    },
+
+    /* 运维监控（管理员 / 运营） */
+    ops: {
+      metrics: function () { return get('/api/v1/ops/metrics', true); },
+      resetMetrics: function () { return post('/api/v1/ops/metrics/reset', {}, true); }
     }
   };
 
