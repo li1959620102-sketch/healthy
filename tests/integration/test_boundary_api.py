@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.core.errors import ErrCode
+from tests.integration.conftest import synthetic_headers
 
 pytestmark = pytest.mark.integration
 
@@ -158,8 +159,11 @@ def test_bv08_diseases_saved(client, run_id, cleanup, db, count):
     headers = _headers_of(login)
 
     diseases = [f"疾病{i}" for i in range(count)]
+    # 2026-10-16 契约变更（合规 D1）：疾病史须带单独同意标记才能落库，
+    # 未同意由服务端拒绝（SEC-11 覆盖该负向分支）。
     r = client.put("/api/v1/users/me/profile",
-                   headers=headers, json={"diseases": diseases}).json()
+                   headers=headers,
+                   json={"diseases": diseases, "sensitive_consent": True}).json()
     assert r["code"] == 0, r
 
     user_id = login["data"]["user"]["user_id"]
@@ -252,7 +256,7 @@ def test_bv23_idempotency_window(client, run_id, cleanup, db):
     from app.utils.security import create_access_token
 
     user_id = f"{run_id}_idem"
-    headers = {"Authorization": f"Bearer {create_access_token(user_id, 'it', 'user')}"}
+    headers = synthetic_headers(user_id, "user")
     tpl_id, rec_id = _make_assessment(client, run_id, cleanup, db, headers, user_id=user_id)
 
     key = f"k-{run_id}"
@@ -276,10 +280,12 @@ def test_bv23_idempotency_window(client, run_id, cleanup, db):
         {"submitted_at": datetime.now() - timedelta(seconds=60)})
     db.commit()
 
+    # 超窗口后不再幂等，此时记录已是 completed → 被"已提交"状态拦截（IT-AS-10）。
+    # 不能放行：重复提交会重置报告分析文本并重新调用模型，用户已看到的报告会变空；
+    # 「重新生成分析」是独立动作，走 /assessments/{id}/report/regenerate（IT-R-08）。
     third = client.post(f"/api/v1/assessments/{rec_id}/submit",
                         headers={**headers, "Idempotency-Key": key}).json()
-    assert third["code"] == 0
-    assert third["data"]["idempotent"] is False, "超过 30 秒窗口后不应再视为幂等"
+    assert third["code"] == ErrCode.ASSESSMENT_CONFLICT, third
 
 
 # --------------------------------------------------------------------------- #
@@ -290,7 +296,7 @@ def test_bv29_concurrent_submit_single_report(client, run_id, cleanup, db):
     from app.utils.security import create_access_token
 
     user_id = f"{run_id}_conc"
-    headers = {"Authorization": f"Bearer {create_access_token(user_id, 'it', 'user')}"}
+    headers = synthetic_headers(user_id, "user")
     tpl_id, rec_id = _make_assessment(client, run_id, cleanup, db, headers, user_id=user_id)
     client.patch(f"/api/v1/assessments/{rec_id}/answers", headers=headers,
                  json={"answers": {q["question_id"]: "A" for q in QUESTIONS}})
@@ -330,7 +336,7 @@ def test_bv29_concurrent_submit_single_report(client, run_id, cleanup, db):
 def test_bv30_empty_lists(client, run_id, cleanup):
     from app.utils.security import create_access_token
 
-    headers = {"Authorization": f"Bearer {create_access_token(f'{run_id}_empty', 'it', 'user')}"}
+    headers = synthetic_headers(f"{run_id}_empty", "user")
     for path in ("/api/v1/assessments", "/api/v1/diet-plans", "/api/v1/consultations"):
         body = client.get(path, headers=headers).json()
         assert body["code"] == 0, (path, body)
@@ -345,7 +351,7 @@ def test_mainline_end_to_end(client, run_id, cleanup, db):
     from app.models.mysql.platform import AssessmentReport
     from app.utils.security import create_access_token
 
-    admin = {"Authorization": f"Bearer {create_access_token(f'{run_id}_adm', 'it', 'admin')}"}
+    admin = synthetic_headers(f"{run_id}_adm", "admin")
     code = f"TPL_{run_id}"
     cleanup.append(lambda s, c=code: _clean_template(s, c))
 
@@ -370,7 +376,7 @@ def test_mainline_end_to_end(client, run_id, cleanup, db):
     # 4) 用户发起测评
     user_id = f"{run_id}_u"
     cleanup.append(lambda s, u=user_id: _clean_user_ids(s, u))
-    headers = {"Authorization": f"Bearer {create_access_token(user_id, 'it', 'user')}"}
+    headers = synthetic_headers(user_id, "user")
     started = client.post("/api/v1/assessments", headers=headers,
                           json={"template_id": tpl_id}).json()
     assert started["code"] == 0, started
@@ -381,6 +387,11 @@ def test_mainline_end_to_end(client, run_id, cleanup, db):
     saved = client.patch(f"/api/v1/assessments/{rec_id}/answers", headers=headers,
                          json={"answers": {"basic_0": "A"}}).json()
     assert saved["code"] == 0 and saved["data"]["progress"].startswith("1/")
+
+    # 5b) 必答题补齐（IT-AS-06：必答项未作答时提交会被拒并回传缺失清单）
+    fill = client.patch(f"/api/v1/assessments/{rec_id}/answers", headers=headers,
+                        json={"answers": {q["question_id"]: "A" for q in QUESTIONS}}).json()
+    assert fill["code"] == 0 and fill["data"]["warnings"] == [], fill
 
     # 6) 提交算分
     submit = client.post(f"/api/v1/assessments/{rec_id}/submit",
@@ -413,7 +424,7 @@ def _make_assessment(client, run_id, cleanup, db, headers, user_id=None):
     if user_id:
         # 合成用户不在 sys_user 中，必须单独登记 user_profile 清理（否则每轮泄漏）
         cleanup.append(lambda s, u=user_id: _clean_user_ids(s, u))
-    admin = {"Authorization": f"Bearer {create_access_token(f'{run_id}_adm', 'it', 'admin')}"}
+    admin = synthetic_headers(f"{run_id}_adm", "admin")
     tpl = client.post("/api/v1/templates", headers=admin, json={
         "code": code, "name": f"集成模板 {run_id}", "type": "nutrition",
         "dimension_config": DIMS, "question_config": QUESTIONS,

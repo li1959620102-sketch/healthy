@@ -13,9 +13,17 @@ from app.utils.security import create_access_token, create_refresh_token
 
 @pytest.mark.unit
 def test_access_token_can_pass_business_auth():
-    token = create_access_token("U-SEC-1", "security_user", "user")
+    """令牌解析层：合法 access 令牌能通过签名与类型校验。
 
-    payload = get_current_user(f"Bearer {token}")
+    完整业务鉴权还包含「账号存在且未停用」一步（`deps._assert_user_active`），
+    那一步依赖数据库，因此由集成用例覆盖（tests/integration/test_auth_user_cases.py
+    的 IT-A-06/07/08 与 test_security_cases.py 的 SEC-07）。单元层只保证纯函数行为，
+    避免把 DB 依赖带进单元测试。
+    """
+    from app.core.deps import _parse_auth
+
+    token = create_access_token("U-SEC-1", "security_user", "user")
+    payload = _parse_auth(f"Bearer {token}", ("access",))
 
     assert payload["sub"] == "U-SEC-1"
     assert payload["type"] == "access"

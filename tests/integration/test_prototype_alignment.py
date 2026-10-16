@@ -96,8 +96,9 @@ def test_health_context_structure(client, auth_factory, run_id):
     assert "不构成诊疗建议" in d["disclaimer"]
 
 
-def test_dietitian_overview_kpi(client, auth_factory, run_id):
-    headers = auth_factory(f"{run_id}_dt", "dietitian")
+def test_dietitian_overview_kpi(client, approved_dietitian, run_id):
+    # 营养师业务接口要求资质已审核（2026-10-16 起），故用 approved_dietitian 造令牌
+    headers = approved_dietitian(f"{run_id}_dt")
     r = client.get("/api/v1/nutritionists/me/overview", headers=headers).json()
     assert r["code"] == 0, r
     d = r["data"]

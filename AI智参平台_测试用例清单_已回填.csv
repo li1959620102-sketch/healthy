@@ -1,150 +1,150 @@
 ﻿用例编号,所属模块,子模块,用例标题,优先级,用例类型,执行状态,实际结果,备注(依据),自动化覆盖,自动化证据
 SM-01,冒烟测试,编写前提（三条必须知道）,服务健康,P0,SM,已执行（自动化）,通过,,已覆盖,dependencies::test_ready_probe_reports_each_dependency; storage::test_ready_reports_redis_and_minio_ok
-SM-02,冒烟测试,编写前提（三条必须知道）,发送验证码,P0,SM,未执行,,,未覆盖,
+SM-02,冒烟测试,编写前提（三条必须知道）,发送验证码,P0,SM,已执行（自动化）,验证码发送成功，演示模式回传 demo_code,SMS_DEMO_MODE=true,已覆盖,tests/integration/test_smoke_cases.py::test_sm02_sms_code_issued
 SM-03,冒烟测试,编写前提（三条必须知道）,注册,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::_register（6 处用例调用并断言 code=0）；⚠️契约差异：注册不返回令牌，令牌走登录换取
 SM-04,冒烟测试,编写前提（三条必须知道）,登录,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::_login（多处调用）
 SM-05,冒烟测试,编写前提（三条必须知道）,获取当前用户,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_special_chars_stored_safely / test_bv14_emoji_and_rare_chars_roundtrip（GET /users/me）
-SM-06,冒烟测试,编写前提（三条必须知道）,未登录访问,P0,SM,未执行,,,未覆盖,
+SM-06,冒烟测试,编写前提（三条必须知道）,未登录访问,P0,SM,已执行（自动化）,未登录访问受保护接口被拒,get_current_user 依赖,已覆盖,tests/integration/test_smoke_cases.py::test_sm06_unauthenticated_blocked
 SM-07,冒烟测试,编写前提（三条必须知道）,完善资料,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv08_diseases_saved（PUT /users/me/profile）
 SM-08,冒烟测试,编写前提（三条必须知道）,模板列表,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（断言已发布可见；未断言排除草稿/待审核/已下线）
 SM-09,冒烟测试,编写前提（三条必须知道）,发起测评,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（assessment_id + template_snapshot + profile_snapshot）
-SM-10,冒烟测试,编写前提（三条必须知道）,获取题目,P0,SM,未执行,,,未覆盖,
+SM-10,冒烟测试,编写前提（三条必须知道）,获取题目,P0,SM,已执行（自动化）,可取到题目列表，初始草稿为空,GET /assessments/{id},已覆盖,tests/integration/test_smoke_cases.py::test_sm10_questions_and_empty_draft
 SM-11,冒烟测试,编写前提（三条必须知道）,保存草稿,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（PATCH answers → progress 1/N）
 SM-12,冒烟测试,编写前提（三条必须知道）,提交测评,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（report_id/score/level）; test_bv29_concurrent_submit_single_report
 SM-13,冒烟测试,编写前提（三条必须知道）,报告流式,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv22_expired_ticket_rejected（仅负向：过期短票被拒；未断言 start→delta→done 事件链）
 SM-14,冒烟测试,编写前提（三条必须知道）,报告详情,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（GET /reports/{id} → score/dimension_scores）
 SM-15,冒烟测试,编写前提（三条必须知道）,智能查询,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,temporal_rules::test_bv21_guest_query_quota（端点可达；未断言 SSE 事件链）
-SM-16,冒烟测试,编写前提（三条必须知道）,拒答策略,P0,SM,未执行,,,未覆盖,
+SM-16,冒烟测试,编写前提（三条必须知道）,拒答策略,P0,SM,已执行（自动化）,医疗建议类问题被拒答,拒答策略,已覆盖,tests/integration/test_smoke_cases.py::test_sm16_refuse_medical_advice
 SM-17,冒烟测试,编写前提（三条必须知道）,游客测评,P0,SM,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_assessment_quota
 SM-18,冒烟测试,编写前提（三条必须知道）,游客认领,P0,SM,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
-SM-19,冒烟测试,编写前提（三条必须知道）,营养师客户列表,P0,SM,未执行,,,未覆盖,
-SM-20,冒烟测试,编写前提（三条必须知道）,资质审核,P0,SM,未执行,,,未覆盖,
+SM-19,冒烟测试,编写前提（三条必须知道）,营养师客户列表,P0,SM,已执行（自动化）,营养师客户列表只含已绑定客户,绑定关系过滤,已覆盖,tests/integration/test_smoke_cases.py::test_sm19_dietitian_customer_list_only_bound
+SM-20,冒烟测试,编写前提（三条必须知道）,资质审核,P0,SM,已执行（自动化）,资质审核未通过前不进入工作台,审核状态门禁,已覆盖,tests/integration/test_smoke_cases.py::test_sm20_dietitian_audit_gate
 SM-21,冒烟测试,编写前提（三条必须知道）,模板审核流,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（submit-audit → audit → 列表可见）
 SM-22,冒烟测试,编写前提（三条必须知道）,幂等提交,P0,SM,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window; test_bv29_concurrent_submit_single_report
-SM-23,冒烟测试,编写前提（三条必须知道）,趋势看板,P0,SM,未执行,,,未覆盖,
+SM-23,冒烟测试,编写前提（三条必须知道）,趋势看板,P0,SM,已执行（自动化）,个人趋势按时间有序返回,趋势排序,已覆盖,tests/integration/test_smoke_cases.py::test_sm23_personal_trend_ordered
 SM-24,冒烟测试,编写前提（三条必须知道）,知识库上传,P0,SM,部分执行（自动化）,部分通过,,部分覆盖,storage::test_bv28_knowledge_reject_unsupported_extension（仅扩展名守卫；上传+embed 成功路径未覆盖）
-SM-25,冒烟测试,编写前提（三条必须知道）,注销账号,P0,SM,未执行,,,未覆盖,
-IT-A-01,接口联调,认证 auth（IT-A）,验证码限频,P1,IT,未执行,,,未覆盖,
-IT-A-02,接口联调,认证 auth（IT-A）,验证码错误,P1,IT,未执行,,,未覆盖,
-IT-A-03,接口联调,认证 auth（IT-A）,验证码过期,P1,IT,未执行,,,未覆盖,
-IT-A-04,接口联调,认证 auth（IT-A）,手机号已注册,P1,IT,未执行,,,未覆盖,
-IT-A-05,接口联调,认证 auth（IT-A）,令牌刷新,P1,IT,未执行,,,未覆盖,
-IT-A-06,接口联调,认证 auth（IT-A）,令牌过期,P1,IT,未执行,,,未覆盖,
-IT-A-07,接口联调,认证 auth（IT-A）,30 分钟无操作,P1,IT,未执行,,,未覆盖,
-IT-A-08,接口联调,认证 auth（IT-A）,登出,P1,IT,未执行,,,未覆盖,
+SM-25,冒烟测试,编写前提（三条必须知道）,注销账号,P0,SM,已执行（自动化）,注销后生成数据删除任务并登记保留期,data_deletion_task,已覆盖,tests/integration/test_smoke_cases.py::test_sm25_account_deletion_task
+IT-A-01,接口联调,认证 auth（IT-A）,验证码限频,P1,IT,已执行（自动化）,同号 60 秒内二次发送被拒，返回 60003 并提示频率,ErrCode.SMS_RATE_LIMITED,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a01_sms_rate_limited
+IT-A-02,接口联调,认证 auth（IT-A）,验证码错误,P1,IT,已执行（自动化）,错误验证码注册被拒；连错达上限后须重新获取,ErrCode.VERIFY_CODE_INVALID,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a02_wrong_verify_code_rejected
+IT-A-03,接口联调,认证 auth（IT-A）,验证码过期,P1,IT,已执行（自动化）,过期验证码被拒，不接受旧码,Redis 验证码 TTL,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a03_expired_verify_code_rejected
+IT-A-04,接口联调,认证 auth（IT-A）,手机号已注册,P1,IT,已执行（自动化）,已注册手机号再次注册被拒，不覆盖原账号,ErrCode.PHONE_EXISTS 系列,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a04_phone_already_registered
+IT-A-05,接口联调,认证 auth（IT-A）,令牌刷新,P1,IT,已执行（自动化）,刷新令牌换新 access，旧 access 仍可用至过期,POST /auth/refresh,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a05_refresh_token_flow
+IT-A-06,接口联调,认证 auth（IT-A）,令牌过期,P1,IT,已执行（自动化）,过期令牌访问受保护接口被拒,ErrCode.TOKEN_EXPIRED,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a06_expired_access_token
+IT-A-07,接口联调,认证 auth（IT-A）,30 分钟无操作,P1,IT,已执行（自动化）,超过空闲窗口的令牌被判定失效,令牌 idle 校验,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a07_idle_timeout_rejected
+IT-A-08,接口联调,认证 auth（IT-A）,登出,P1,IT,已执行（自动化）,登出后原令牌立即失效（黑名单）,app/utils/token_blacklist.py,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a08_logout_invalidates_token
 IT-A-09,接口联调,认证 auth（IT-A）,角色越权,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,prototype_alignment::test_dietitian_overview_requires_role（角色校验）
-IT-A-10,接口联调,认证 auth（IT-A）,二次验证,P1,IT,未执行,,,未覆盖,
+IT-A-10,接口联调,认证 auth（IT-A）,二次验证,P1,IT,已执行（自动化）,改绑手机号必须带短信验证码，缺失被拒,PUT /users/me/phone,已覆盖,tests/integration/test_auth_user_cases.py::test_it_a10_phone_change_requires_verify_code
 IT-U-01,接口联调,用户 users（IT-U）,资料完整性,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv08_diseases_saved（档案字段保存）
-IT-U-02,接口联调,用户 users（IT-U）,敏感信息单独同意,P0,IT,未执行,,,未覆盖,
-IT-U-03,接口联调,用户 users（IT-U）,改绑手机号,P1,IT,未执行,,,未覆盖,
-IT-U-04,接口联调,用户 users（IT-U）,改密码,P1,IT,未执行,,,未覆盖,
-IT-U-05,接口联调,用户 users（IT-U）,数据导出,P1,IT,未执行,,,未覆盖,
-IT-U-06,接口联调,用户 users（IT-U）,注销后登录,P0,IT,未执行,,,未覆盖,
-IT-U-07,接口联调,用户 users（IT-U）,注销数据范围,P0,IT,未执行,,,未覆盖,
-IT-U-08,接口联调,用户 users（IT-U）,请求追踪,P2,IT,未执行,,,未覆盖,
-IT-U-09,接口联调,用户 users（IT-U）,并发改资料,P2,IT,未执行,,,未覆盖,
+IT-U-02,接口联调,用户 users（IT-U）,敏感信息单独同意,P0,IT,已执行（自动化）,未单独同意敏感信息处理时，读取病史被拒,同意状态位校验,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u02_sensitive_consent_required
+IT-U-03,接口联调,用户 users（IT-U）,改绑手机号,P1,IT,已执行（自动化）,改绑后新号可登录、旧号登录失败,PUT /users/me/phone + 登录校验,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u03_phone_change_takes_effect
+IT-U-04,接口联调,用户 users（IT-U）,改密码,P1,IT,已执行（自动化）,改密后旧密码失效、新密码可登录,PUT /users/me/password,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u04_password_change
+IT-U-05,接口联调,用户 users（IT-U）,数据导出,P1,IT,已执行（自动化）,完整链路验证：造档案(171cm/63.5kg)+走完测评出报告→错误验证码被拒→正确验证码导出 CSV/XLSX→按签名地址真实下载→文件内含本人 user_id 与真实身高体重、测评与报告编号一一对应。过程中修掉 3 个真实缺陷：①_phone_of 查了 user_profile.phone（该列不存在，1054）；② 引入不存在的 app.utils.crypto 导致解密静默失败、所有人收到「未绑定手机号」；③ 声明 10 分钟失效实际签 7 天。,POST /users/me/data-export；签名 X-Amz-Expires=600；ErrCode 90001 未绑定手机号,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u05_data_export_scope / test_it_u05_data_export_real_file / test_it_u05_data_export_xlsx
+IT-U-06,接口联调,用户 users（IT-U）,注销后登录,P0,IT,已执行（自动化）,注销后登录被拒，并生成数据删除任务,sys_user.deleted_at + data_deletion_task,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u06_login_after_deletion
+IT-U-07,接口联调,用户 users（IT-U）,注销数据范围,P0,IT,已执行（自动化）,注销登记覆盖业务库/向量库/对象存储三处,注销清理登记链,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u07_deletion_covers_three_stores
+IT-U-08,接口联调,用户 users（IT-U）,请求追踪,P2,IT,已执行（自动化）,成功与失败响应均带 request_id，可定位到日志,统一响应信封 request_id,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u08_request_id_traceable
+IT-U-09,接口联调,用户 users（IT-U）,并发改资料,P2,IT,已执行（自动化）,并发改资料无 500、无脏数据，最终值落在其中一次写入,并发写入实测,已覆盖,tests/integration/test_auth_user_cases.py::test_it_u09_concurrent_profile_update
 IT-U-10,接口联调,用户 users（IT-U）,游客限流,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_query_quota / test_bv21_guest_assessment_quota
-IT-N-01,接口联调,营养师与绑定（IT-N）,资质提交,P1,IT,未执行,,,未覆盖,
-IT-N-02,接口联调,营养师与绑定（IT-N）,审核驳回,P1,IT,未执行,,,未覆盖,
-IT-N-03,接口联调,营养师与绑定（IT-N）,邀请码绑定,P0,IT,未执行,,,未覆盖,
-IT-N-04,接口联调,营养师与绑定（IT-N）,同期只绑 1 人,P0,IT,未执行,,,未覆盖,
-IT-N-05,接口联调,营养师与绑定（IT-N）,咨询自动绑定,P1,IT,未执行,,,未覆盖,
-IT-N-06,接口联调,营养师与绑定（IT-N）,解绑后权限,P0,IT,未执行,,,未覆盖,
-IT-N-07,接口联调,营养师与绑定（IT-N）,历史数据保留,P1,IT,未执行,,,未覆盖,
-IT-N-08,接口联调,营养师与绑定（IT-N）,未绑定不可见,P0,IT,未执行,,,未覆盖,
-IT-N-09,接口联调,营养师与绑定（IT-N）,客户筛选,P1,IT,未执行,,,未覆盖,
-IT-N-10,接口联调,营养师与绑定（IT-N）,营养师被禁用,P0,IT,未执行,,,未覆盖,
-IT-N-11,接口联调,营养师与绑定（IT-N）,禁用后客户处置,P1,IT,未执行,,,未覆盖,
-IT-N-12,接口联调,营养师与绑定（IT-N）,批注报告,P1,IT,未执行,,,未覆盖,
-IT-N-13,接口联调,营养师与绑定（IT-N）,非绑定批注,P0,IT,未执行,,,未覆盖,
+IT-N-01,接口联调,营养师与绑定（IT-N）,资质提交,P1,IT,已执行（自动化）,未申请时调用营养师接口返回 30001；提交申请后放行,ErrCode.NOT_APPLIED(30001),已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n01_apply_then_gate
+IT-N-02,接口联调,营养师与绑定（IT-N）,审核驳回,P1,IT,已执行（自动化）,驳回后可重新提交，状态机回到待审核,审核状态机,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n02_audit_rejected_resubmit
+IT-N-03,接口联调,营养师与绑定（IT-N）,邀请码绑定,P0,IT,已执行（自动化）,凭邀请码绑定成功，建立绑定关系,邀请码绑定,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n03_invite_code_binding
+IT-N-04,接口联调,营养师与绑定（IT-N）,同期只绑 1 人,P0,IT,已执行（自动化）,同一客户同期只能绑 1 位营养师，换绑需先解绑,绑定唯一约束,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n04_only_one_dietitian_at_a_time
+IT-N-05,接口联调,营养师与绑定（IT-N）,咨询自动绑定,P1,IT,已执行（自动化）,咨询结束后自动建立绑定,咨询→绑定联动,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n05_auto_bind_after_consultation
+IT-N-06,接口联调,营养师与绑定（IT-N）,解绑后权限,P0,IT,已执行（自动化）,解绑后营养师端立即看不到该客户,解绑后权限回收,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n06_after_unbind_no_access
+IT-N-07,接口联调,营养师与绑定（IT-N）,历史数据保留,P1,IT,已执行（自动化）,解绑不删除客户侧历史记录,解绑≠注销,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n07_customer_keeps_history_after_unbind
+IT-N-08,接口联调,营养师与绑定（IT-N）,未绑定不可见,P0,IT,已执行（自动化）,未绑定的营养师看不到该客户报告,越权拦截,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n08_unbound_dietitian_cannot_see
+IT-N-09,接口联调,营养师与绑定（IT-N）,客户筛选,P1,IT,已执行（自动化）,客户列表支持按风险等级筛选且结果正确,GET /nutritionists/customers,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n09_customer_filter_by_level
+IT-N-10,接口联调,营养师与绑定（IT-N）,营养师被禁用,P0,IT,已执行（自动化）,营养师被禁用后立即失去访问能力,禁用即时生效,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n10_disabled_dietitian_loses_access
+IT-N-11,接口联调,营养师与绑定（IT-N）,禁用后客户处置,P1,IT,已执行（自动化）,营养师被禁用不影响客户自身侧使用,禁用影响面隔离,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n11_customer_side_unaffected
+IT-N-12,接口联调,营养师与绑定（IT-N）,批注报告,P1,IT,已执行（自动化）,营养师可对绑定客户报告写批注并保存,PUT /reports/{id}/annotation,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n12_annotate_report
+IT-N-13,接口联调,营养师与绑定（IT-N）,非绑定批注,P0,IT,已执行（自动化）,未绑定营养师批注被拒（90002）,ErrCode.NOT_BOUND(90002),已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_n13_annotation_requires_binding
 IT-N-14,接口联调,营养师与绑定（IT-N）,导出授权,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,batch56::test_dietitian_export_customers（仅营养师导出自身客户）
-IT-T-01,接口联调,测评模板（IT-T）,状态机,P0,IT,未执行,,,未覆盖,
-IT-T-02,接口联调,测评模板（IT-T）,草稿不可见,P0,IT,未执行,,,未覆盖,
-IT-T-03,接口联调,测评模板（IT-T）,编辑生成新版本,P0,IT,未执行,,,未覆盖,
-IT-T-04,接口联调,测评模板（IT-T）,版本锁定,P0,IT,未执行,,,未覆盖,
-IT-T-05,接口联调,测评模板（IT-T）,下线后历史可见,P0,IT,未执行,,,未覆盖,
-IT-T-06,接口联调,测评模板（IT-T）,下线有进行中测评,P1,IT,未执行,,,未覆盖,
+IT-T-01,接口联调,测评模板（IT-T）,状态机,P0,IT,已执行（自动化）,草稿→待审核→已发布→已下线，非法跳转被拒,模板状态机,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t01_template_state_machine
+IT-T-02,接口联调,测评模板（IT-T）,草稿不可见,P0,IT,已执行（自动化）,草稿/待审核/已下线模板对普通用户不可见,用户侧可见性过滤,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t02_draft_pending_offline_invisible
+IT-T-03,接口联调,测评模板（IT-T）,编辑生成新版本,P0,IT,已执行（自动化）,编辑已发布模板生成新版本号，旧版本保留,版本递增,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t03_edit_creates_new_version
+IT-T-04,接口联调,测评模板（IT-T）,版本锁定,P0,IT,已执行（自动化）,按版本锁定测评记录，模板改动不影响进行中测评,template_version 快照,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t04_version_locking
+IT-T-05,接口联调,测评模板（IT-T）,下线后历史可见,P0,IT,已执行（自动化）,下线后历史报告仍可查，但不能再发起新测评,下线语义,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t05_offline_keeps_history_blocks_new
+IT-T-06,接口联调,测评模板（IT-T）,下线有进行中测评,P1,IT,已执行（自动化）,模板下线不影响已开始的测评继续作答,进行中测评豁免,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t06_offline_allows_in_progress
 IT-T-07,接口联调,测评模板（IT-T）,权重和为 1,P1,IT,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv18_weight_sum_must_be_one（规则层）
-IT-T-08,接口联调,测评模板（IT-T）,版本列表,P2,IT,未执行,,,未覆盖,
-IT-T-09,接口联调,测评模板（IT-T）,非创建者编辑,P1,IT,未执行,,,未覆盖,
-IT-T-10,接口联调,测评模板（IT-T）,权重版本记录,P1,IT,未执行,,,未覆盖,
+IT-T-08,接口联调,测评模板（IT-T）,版本列表,P2,IT,已执行（自动化）,版本列表按版本号倒序返回且与库中一致,GET /templates/{id}/versions,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t08_version_list
+IT-T-09,接口联调,测评模板（IT-T）,非创建者编辑,P1,IT,已执行（自动化）,非创建者编辑模板被拒,创建者权限校验,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t09_non_creator_cannot_edit
+IT-T-10,接口联调,测评模板（IT-T）,权重版本记录,P1,IT,已执行（自动化）,报告记录模板版本与评分版本，可回溯当时口径,assessment_report.template_version/scoring_version,已覆盖,tests/integration/test_dietitian_template_cases.py::test_it_t10_report_records_scoring_version
 IT-AS-01,接口联调,测评执行（IT-AS）,快照比对,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_mainline_end_to_end（template_snapshot/profile_snapshot）
 IT-AS-02,接口联调,测评执行（IT-AS）,断点续答,P0,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（保存后未重新读取验证续答）
-IT-AS-03,接口联调,测评执行（IT-AS）,跨设备续答,P1,IT,未执行,,,未覆盖,
+IT-AS-03,接口联调,测评执行（IT-AS）,跨设备续答,P1,IT,已执行（自动化）,换设备打开同一测评恢复到上次草稿与进度,GET /assessments/{id} 恢复语义,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as03_resume_on_another_device
 IT-AS-04,接口联调,测评执行（IT-AS）,草稿 30 天,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv24_draft_expiry
-IT-AS-05,接口联调,测评执行（IT-AS）,实时校验,P1,IT,未执行,,,未覆盖,
-IT-AS-06,接口联调,测评执行（IT-AS）,必填校验,P1,IT,未执行,,,未覆盖,
-IT-AS-07,接口联调,测评执行（IT-AS）,保存草稿性能,P1,IT,未执行,,,未覆盖,
-IT-AS-08,接口联调,测评执行（IT-AS）,提交性能,P0,IT,未执行,,,未覆盖,
+IT-AS-05,接口联调,测评执行（IT-AS）,实时校验,P1,IT,已执行（自动化）,保存草稿返回实时校验告警（如未作答按 0 分计入）,PATCH /assessments/{id}/answers warnings,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as05_realtime_validation_warnings
+IT-AS-06,接口联调,测评执行（IT-AS）,必填校验,P1,IT,已执行（自动化）,必填项缺失时提交被拒,必填校验,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as06_required_answers_block_submit
+IT-AS-07,接口联调,测评执行（IT-AS）,保存草稿性能,P1,IT,已执行（自动化）,保存草稿实测在时延门槛内,保存草稿实测,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as07_save_draft_latency
+IT-AS-08,接口联调,测评执行（IT-AS）,提交性能,P0,IT,已执行（自动化）,提交测评实测在时延门槛内,提交实测,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as08_submit_latency
 IT-AS-09,接口联调,测评执行（IT-AS）,幂等-同键重放,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window
-IT-AS-10,接口联调,测评执行（IT-AS）,幂等-超窗口,P1,IT,未执行,,,未覆盖,
-IT-AS-11,接口联调,测评执行（IT-AS）,幂等键缺失,P1,IT,未执行,,,未覆盖,
-IT-AS-12,接口联调,测评执行（IT-AS）,已提交重复提交,P1,IT,未执行,,,未覆盖,
-IT-AS-13,接口联调,测评执行（IT-AS）,存在未完成测评,P1,IT,未执行,,,未覆盖,
-IT-AS-14,接口联调,测评执行（IT-AS）,作废,P1,IT,未执行,,,未覆盖,
-IT-AS-15,接口联调,测评执行（IT-AS）,游客→注册→认领,P0,IT,未执行,,,未覆盖,
-IT-AS-16,接口联调,测评执行（IT-AS）,游客认领冒用,P0,IT,未执行,,,未覆盖,
+IT-AS-10,接口联调,测评执行（IT-AS）,幂等-超窗口,P1,IT,已执行（自动化）,幂等窗口外的重复提交不被误判为同一次,Idempotency-Key 窗口,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as10_idempotency_window_expired
+IT-AS-11,接口联调,测评执行（IT-AS）,幂等键缺失,P1,IT,已执行（自动化）,不带 Idempotency-Key 的提交被拒,接口层强制幂等键,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as11_missing_idempotency_key
+IT-AS-12,接口联调,测评执行（IT-AS）,已提交重复提交,P1,IT,已执行（自动化）,已完成的测评重复提交被拒，不产生第二份报告,已提交状态校验,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as12_resubmit_completed_rejected
+IT-AS-13,接口联调,测评执行（IT-AS）,存在未完成测评,P1,IT,已执行（自动化）,同模板存在进行中测评时复用该记录而非新建,进行中复用,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as13_reuse_in_progress
+IT-AS-14,接口联调,测评执行（IT-AS）,作废,P1,IT,已执行（自动化）,已作废（放弃）的测评再提交被拒,voided_at 校验,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as14_cancel_then_submit_denied
+IT-AS-15,接口联调,测评执行（IT-AS）,游客→注册→认领,P0,IT,已执行（自动化）,游客测评在注册后可通过认领转移到自己名下,POST /assessments/guest/claim,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as15_guest_claim_transfer
+IT-AS-16,接口联调,测评执行（IT-AS）,游客认领冒用,P0,IT,已执行（自动化）,冒用他人游客凭证认领被拒（需手机号+验证码）,认领二次验证,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as16_claim_requires_sms_proof
 IT-AS-17,接口联调,测评执行（IT-AS）,游客超时认领,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
-IT-AS-18,接口联调,测评执行（IT-AS）,草稿乐观锁,P1,IT,未执行,,,未覆盖,
+IT-AS-18,接口联调,测评执行（IT-AS）,草稿乐观锁,P1,IT,已执行（自动化）,并发保存草稿时旧 version 被拒，不静默覆盖,saved_at 乐观锁,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_as18_draft_optimistic_lock
 IT-AS-19,接口联调,测评执行（IT-AS）,模板快照完整性,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_mainline_end_to_end（仅断言快照非空）
 IT-AS-20,接口联调,测评执行（IT-AS）,评分确定性,P0,IT,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv16_level_is_deterministic
-IT-R-01,接口联调,报告（IT-R）,结构化字段,P0,IT,未执行,,,未覆盖,
-IT-R-02,接口联调,报告（IT-R）,建议结构,P0,IT,未执行,,,未覆盖,
-IT-R-03,接口联调,报告（IT-R）,引用可溯源,P0,IT,未执行,,,未覆盖,
-IT-R-04,接口联调,报告（IT-R）,免责声明,P0,IT,未执行,,,未覆盖,
-IT-R-05,接口联调,报告（IT-R）,生成中状态,P1,IT,未执行,,,未覆盖,
-IT-R-06,接口联调,报告（IT-R）,自动重试,P1,IT,未执行,,,未覆盖,
-IT-R-07,接口联调,报告（IT-R）,降级基础版,P0,IT,未执行,,,未覆盖,
-IT-R-08,接口联调,报告（IT-R）,手动重生成,P0,IT,未执行,,,未覆盖,
-IT-R-09,接口联调,报告（IT-R）,答案不丢失,P0,IT,未执行,,,未覆盖,
+IT-R-01,接口联调,报告（IT-R）,结构化字段,P0,IT,已执行（自动化）,报告含总分/标准化分/等级/维度分等结构化字段，类型正确,GET /reports/{id},已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r01_structured_fields
+IT-R-02,接口联调,报告（IT-R）,建议结构,P0,IT,已执行（自动化）,建议项结构一致（内容+依据），可直接渲染,suggestions 形状,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r02_suggestion_shape
+IT-R-03,接口联调,报告（IT-R）,引用可溯源,P0,IT,已执行（自动化）,报告引用带来源标识，可回溯到知识条目,references 字段,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r03_references_traceable
+IT-R-04,接口联调,报告（IT-R）,免责声明,P0,IT,已执行（自动化）,报告固定包含免责声明,disclaimer 字段,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r04_disclaimer
+IT-R-05,接口联调,报告（IT-R）,生成中状态,P1,IT,已执行（自动化）,生成中报告状态为 generating，前端可据此展示进度,assessment_report.state,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r05_generating_state
+IT-R-06,接口联调,报告（IT-R）,自动重试,P1,IT,已执行（自动化）,生成失败自动重试且次数受限，不无限打上游,retry_count / 退避,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r06_retry_backoff
+IT-R-07,接口联调,报告（IT-R）,降级基础版,P0,IT,已执行（自动化）,模型不可用时降级为基础版（code=0 且 state=basic）,降级语义：不可用 50002,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r07_degrade_to_basic
+IT-R-08,接口联调,报告（IT-R）,手动重生成,P0,IT,已执行（自动化）,手动重生成沿用同一 report_id，不新增报告,重新生成幂等,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r08_regenerate_keeps_report_id
+IT-R-09,接口联调,报告（IT-R）,答案不丢失,P0,IT,已执行（自动化）,生成过程中故障不影响已保存答案,答案持久化验证,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r09_answers_survive_fault
 IT-R-10,接口联调,报告（IT-R）,SSE 短票,P0,IT,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv22_stream_ticket_issued
-IT-R-11,接口联调,报告（IT-R）,流式事件完整性,P0,IT,未执行,,,未覆盖,
+IT-R-11,接口联调,报告（IT-R）,流式事件完整性,P0,IT,已执行（自动化）,报告 SSE 事件齐全（start/delta/done），顺序正确,GET /reports/stream?ticket=,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r11_stream_events_complete
 IT-R-12,接口联调,报告（IT-R）,PDF 导出,P2,IT,已执行（自动化）,通过,,已覆盖,batch56::test_report_pdf_generates_real_file
-IT-R-13,接口联调,报告（IT-R）,批注后状态,P1,IT,未执行,,,未覆盖,
-IT-R-14,接口联调,报告（IT-R）,他人报告越权,P0,IT,未执行,,,未覆盖,
-IT-C-01,接口联调,智能查询（IT-C）,首字节时延,P0,IT,未执行,,,未覆盖,
-IT-C-02,接口联调,智能查询（IT-C）,完整回答时延,P0,IT,未执行,,,未覆盖,
-IT-C-03,接口联调,智能查询（IT-C）,缓存命中,P2,IT,未执行,,,未覆盖,
-IT-C-04,接口联调,智能查询（IT-C）,短输入,P1,IT,未执行,,,未覆盖,
-IT-C-05,接口联调,智能查询（IT-C）,引用来源,P0,IT,未执行,,,未覆盖,
-IT-C-06,接口联调,智能查询（IT-C）,无来源兜底,P0,IT,未执行,,,未覆盖,
-IT-C-07,接口联调,智能查询（IT-C）,拒答-用药,P0,IT,未执行,,,未覆盖,
-IT-C-08,接口联调,智能查询（IT-C）,拒答-诊断,P0,IT,未执行,,,未覆盖,
-IT-C-09,接口联调,智能查询（IT-C）,拒答-报告解读,P0,IT,未执行,,,未覆盖,
-IT-C-10,接口联调,智能查询（IT-C）,拒答-孕婴,P0,IT,未执行,,,未覆盖,
-IT-C-11,接口联调,智能查询（IT-C）,多轮追问,P1,IT,未执行,,,未覆盖,
-IT-C-12,接口联调,智能查询（IT-C）,会话列表与历史,P1,IT,未执行,,,未覆盖,
-IT-C-13,接口联调,智能查询（IT-C）,转人工,P1,IT,未执行,,,未覆盖,
-IT-C-14,接口联调,智能查询（IT-C）,转人工后恢复,P2,IT,未执行,,,未覆盖,
-IT-C-15,接口联调,智能查询（IT-C）,服务繁忙,P0,IT,未执行,,,未覆盖,
-IT-C-16,接口联调,智能查询（IT-C）,模型超时,P1,IT,未执行,,,未覆盖,
-IT-CS-01,接口联调,人工咨询（IT-CS）,发起咨询,P1,IT,未执行,,,未覆盖,
-IT-CS-02,接口联调,人工咨询（IT-CS）,状态机,P1,IT,未执行,,,未覆盖,
-IT-CS-03,接口联调,人工咨询（IT-CS）,消息收发,P0,IT,未执行,,,未覆盖,
-IT-CS-04,接口联调,人工咨询（IT-CS）,非相关方访问,P0,IT,未执行,,,未覆盖,
+IT-R-13,接口联调,报告（IT-R）,批注后状态,P1,IT,已执行（自动化）,营养师批注后报告标记为已修订,annotation 状态位,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r13_annotation_marks_revised
+IT-R-14,接口联调,报告（IT-R）,他人报告越权,P0,IT,已执行（自动化）,访问他人报告统一返回 404，不泄露存在性,水平越权防护,已覆盖,tests/integration/test_assessment_report_cases.py::test_it_r14_other_user_report_404
+IT-C-01,接口联调,智能查询（IT-C）,首字节时延,P0,IT,已执行（自动化）,统一预热后首字节进入稳态；缓存命中约 20~40ms，未命中路径经 SSE 分段实测为检索 0.05s + 上游模型（裸调首 token 0.717s）。真实服务 47 条样本首字节 P95=2.137s。,POST /chat/query SSE；冷启动检索 7.9s→稳态 0.05s（预热含真实嵌入）,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c01_c02_query_latency / test_it_c01b_ready_reports_agent_warmth
+IT-C-02,接口联调,智能查询（IT-C）,完整回答时延,P0,IT,已执行（自动化）,真实服务 47 条不重复问题：完整回答 P95=12.474s、最大 14.445s；上游裸调总耗时 9.366s，主要成本在第三方模型生成速度。,SSE done 事件耗时实测；模型 Qwen/Qwen2.5-72B-Instruct,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c01_c02_query_latency；_perf02_probe.py 实测
+IT-C-03,接口联调,智能查询（IT-C）,缓存命中,P2,IT,已执行（自动化）,相同问题二次提问命中缓存，done 事件标记 cached=true,答案缓存（仅缓存有依据且完整的回答）,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c03_answer_cache
+IT-C-04,接口联调,智能查询（IT-C）,短输入,P1,IT,已执行（自动化）,过短输入被识别为闲聊并给出引导话术，不空答,_smalltalk_kind 分流,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c04_short_input
+IT-C-05,接口联调,智能查询（IT-C）,引用来源,P0,IT,已执行（自动化）,回答附带引用片段，字段含标题与来源,reference 事件 docs,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c05_reference_present
+IT-C-06,接口联调,智能查询（IT-C）,无来源兜底,P0,IT,已执行（自动化）,知识库无相关片段时如实说明并给出替代路径，不编造,no_reference 兜底话术,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c06_no_source_fallback
+IT-C-07,接口联调,智能查询（IT-C）,拒答-用药,P0,IT,已执行（自动化）,用药剂量类问题拒答，且模型调用次数为 0,app/core/refusal.py + 反证模型未被调用,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c07_10_refusal[medical_advice]
+IT-C-08,接口联调,智能查询（IT-C）,拒答-诊断,P0,IT,已执行（自动化）,疾病诊断类问题拒答，模型未被调用,reason=diagnosis,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c07_10_refusal[diagnosis]
+IT-C-09,接口联调,智能查询（IT-C）,拒答-报告解读,P0,IT,已执行（自动化）,报告解读类问题拒答，模型未被调用,reason=report_interpretation,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c07_10_refusal[report_interpretation]
+IT-C-10,接口联调,智能查询（IT-C）,拒答-孕婴,P0,IT,已执行（自动化）,孕婴特殊人群问题拒答，模型未被调用,reason=pregnancy,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c07_10_refusal[pregnancy]
+IT-C-11,接口联调,智能查询（IT-C）,多轮追问,P1,IT,已执行（自动化）,多轮追问带上文，检索词与回答均体现上下文,retrieval_query 拼接历史,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c11_multi_turn_context
+IT-C-12,接口联调,智能查询（IT-C）,会话列表与历史,P1,IT,已执行（自动化）,会话列表与历史消息可完整取回,GET /chat/sessions + /chat/sessions/latest,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c12_sessions_and_history
+IT-C-13,接口联调,智能查询（IT-C）,转人工,P1,IT,已执行（自动化）,可转人工，转接后进入人工咨询流程,转人工状态迁移,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c13_transfer_human
+IT-C-14,接口联调,智能查询（IT-C）,转人工后恢复,P2,IT,已执行（自动化）,人工结束后可恢复到智能体继续追问,转人工后恢复,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c14_resume_after_human_closed
+IT-C-15,接口联调,智能查询（IT-C）,服务繁忙,P0,IT,已执行（自动化）,并发超容量时不拒绝不丢弃，回传负载提示,并发准入 enter/exit,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c15_busy_notice_without_dropping
+IT-C-16,接口联调,智能查询（IT-C）,模型超时,P1,IT,已执行（自动化）,模型异常时推送 error 事件且不泄露堆栈,60001 服务繁忙,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_c16_model_error_event
+IT-CS-01,接口联调,人工咨询（IT-CS）,发起咨询,P1,IT,已执行（自动化）,发起咨询成功返回咨询 ID，状态为进行中,POST /consultations,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs01_create_consultation
+IT-CS-02,接口联调,人工咨询（IT-CS）,状态机,P1,IT,已执行（自动化）,咨询状态机（待接单/进行中/已结束）按规则迁移,咨询状态取值以实际枚举为准（active 而非 in_progress）,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs02_status_machine
+IT-CS-03,接口联调,人工咨询（IT-CS）,消息收发,P0,IT,已执行（自动化）,客户与营养师双向收发消息成功,consultation_message 落库,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs03_message_exchange
+IT-CS-04,接口联调,人工咨询（IT-CS）,非相关方访问,P0,IT,已执行（自动化）,非相关方访问咨询返回 404，不泄露存在性,越权拦截,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs04_non_party_404
 IT-CS-05,接口联调,人工咨询（IT-CS）,30 分钟超时,P1,IT,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv25_consultation_timeout
-IT-CS-06,接口联调,人工咨询（IT-CS）,满意度评价,P2,IT,未执行,,,未覆盖,
-IT-CS-07,接口联调,人工咨询（IT-CS）,结束咨询,P1,IT,未执行,,,未覆盖,
-IT-CS-08,接口联调,人工咨询（IT-CS）,图片消息,P2,IT,未执行,,,未覆盖,
-IT-D-01,接口联调,数据看板（IT-D）,同模板趋势,P0,IT,未执行,,,未覆盖,
-IT-D-02,接口联调,数据看板（IT-D）,跨模板标注,P1,IT,未执行,,,未覆盖,
-IT-D-03,接口联调,数据看板（IT-D）,图表时延,P1,IT,未执行,,,未覆盖,
-IT-D-04,接口联调,数据看板（IT-D）,智能解读时延,P1,IT,未执行,,,未覆盖,
-IT-D-05,接口联调,数据看板（IT-D）,归因正确性,P0,IT,未执行,,,未覆盖,
+IT-CS-06,接口联调,人工咨询（IT-CS）,满意度评价,P2,IT,已执行（自动化）,满意度只能评价一次，重复提交被拒,rating 一次性约束,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs06_rating_once
+IT-CS-07,接口联调,人工咨询（IT-CS）,结束咨询,P1,IT,已执行（自动化）,咨询结束后再发消息被拒,已结束咨询禁发,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs07_close_blocks_send
+IT-CS-08,接口联调,人工咨询（IT-CS）,图片消息,P2,IT,已执行（自动化）,图片消息当前不支持，如实拒绝而非静默丢弃,content_type 白名单,已覆盖,tests/integration/test_chat_consultation_cases.py::test_it_cs08_image_message_rejected
+IT-D-01,接口联调,数据看板（IT-D）,同模板趋势,P0,IT,已执行（自动化）,趋势只聚合同一模板的记录，跨模板不混算,GET /dashboard/trend,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d01_trend_same_template_only
+IT-D-02,接口联调,数据看板（IT-D）,跨模板标注,P1,IT,已执行（自动化）,跨模板数据带模板标注，明确说明不可直接比较,template_name 标注,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d02_cross_template_annotated
+IT-D-03,接口联调,数据看板（IT-D）,图表时延,P1,IT,已执行（自动化）,图表查询实测在时延门槛内,看板查询实测,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d03_chart_latency
+IT-D-04,接口联调,数据看板（IT-D）,智能解读时延,P1,IT,已执行（自动化）,智能解读实测在时延门槛内,解读耗时实测,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d04_insight_latency
+IT-D-05,接口联调,数据看板（IT-D）,归因正确性,P0,IT,已执行（自动化）,归因基于规则而非模型推断，并列最大时如实说明并列,归因接口 + 并列口径,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d05_attribution_rule_based
 IT-D-06,接口联调,数据看板（IT-D）,空数据,P1,IT,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv30_empty_lists（覆盖 assessments/diet-plans/consultations，非看板）
-IT-D-07,接口联调,数据看板（IT-D）,等价数据表,P1,IT,未执行,,,未覆盖,
-IT-AD-01,接口联调,管理后台（IT-AD）,用户禁用,P1,IT,未执行,,,未覆盖,
-IT-AD-02,接口联调,管理后台（IT-AD）,解封,P1,IT,未执行,,,未覆盖,
-IT-AD-03,接口联调,管理后台（IT-AD）,资质审核列表,P2,IT,未执行,,,未覆盖,
-IT-AD-04,接口联调,管理后台（IT-AD）,系统配置,P1,IT,未执行,,,未覆盖,
-IT-AD-05,接口联调,管理后台（IT-AD）,操作日志,P1,IT,未执行,,,未覆盖,
-IT-AD-06,接口联调,管理后台（IT-AD）,运营概览,P2,IT,未执行,,,未覆盖,
-IT-AD-07,接口联调,管理后台（IT-AD）,深分页,P2,IT,未执行,,,未覆盖,
+IT-D-07,接口联调,数据看板（IT-D）,等价数据表,P1,IT,已执行（自动化）,图表配有等价数据表，读屏与无图场景可用,等价表接口,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_d07_equivalent_table
+IT-AD-01,接口联调,管理后台（IT-AD）,用户禁用,P1,IT,已执行（自动化）,禁用用户后该用户令牌立即失效，且写审计日志,user.disable + 审计动作 user.disable,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad01_disable_user
+IT-AD-02,接口联调,管理后台（IT-AD）,解封,P1,IT,已执行（自动化）,解封后用户可重新登录,user.enable,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad02_enable_user
+IT-AD-03,接口联调,管理后台（IT-AD）,资质审核列表,P2,IT,已执行（自动化）,资质审核列表仅管理员可见，普通用户被拒,角色权限校验,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad03_audit_list_admin_only
+IT-AD-04,接口联调,管理后台（IT-AD）,系统配置,P1,IT,已执行（自动化）,修改系统配置后接口行为随之改变,config.update,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad04_system_config_effective
+IT-AD-05,接口联调,管理后台（IT-AD）,操作日志,P1,IT,已执行（自动化）,操作日志字段齐全（动作/操作人/对象/时间/结果）,审计动作点分命名,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad05_operation_log_fields
+IT-AD-06,接口联调,管理后台（IT-AD）,运营概览,P2,IT,已执行（自动化）,运营概览数字与库中实际统计一致（真实 total）,看板与 SQL 交叉核对,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad06_overview_matches_db
+IT-AD-07,接口联调,管理后台（IT-AD）,深分页,P2,IT,已执行（自动化）,深分页（第 3 页起）返回真实数据而非重复首页,page/page_size 真实生效,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_ad07_deep_paging
 IT-K-01,接口联调,知识库（IT-K）,上传格式,P2,IT,已执行（自动化）,通过,,已覆盖,storage::test_bv28_knowledge_reject_unsupported_extension
-IT-K-02,接口联调,知识库（IT-K）,向量化状态,P1,IT,未执行,,,未覆盖,
-IT-K-03,接口联调,知识库（IT-K）,删除联动,P0,IT,未执行,,,未覆盖,
-IT-K-04,接口联调,知识库（IT-K）,删除后查询,P1,IT,未执行,,,未覆盖,
-IT-K-05,接口联调,知识库（IT-K）,非管理员访问,P1,IT,未执行,,,未覆盖,
+IT-K-02,接口联调,知识库（IT-K）,向量化状态,P1,IT,已执行（自动化）,向量化状态按 pending→processing→done/failed 迁移并回写分块数,embed_status/chunk_count 维护,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_k02_embed_status_chain
+IT-K-03,接口联调,知识库（IT-K）,删除联动,P0,IT,已执行（自动化）,删除知识文档时向量优先删除，成功后再删元数据,向量与元数据联动,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_k03_delete_syncs_vectors
+IT-K-04,接口联调,知识库（IT-K）,删除后查询,P1,IT,已执行（自动化）,删除后问答检索不再命中该文档,删除后检索实测,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_k04_query_after_delete
+IT-K-05,接口联调,知识库（IT-K）,非管理员访问,P1,IT,已执行（自动化）,非管理员访问知识库管理接口被拒,角色权限校验,已覆盖,tests/integration/test_dashboard_admin_kb_cases.py::test_it_k05_non_admin_forbidden
 BV-01,边界值,知识库（IT-K）,手机号｜11 位正常 / 10 位 / 12 位 / 空 / 字母 / 非 1 开头,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv01_phone; boundary_api::test_bv01_invalid_phone_rejected / test_bv01_valid_phone_accepted
 BV-02,边界值,知识库（IT-K）,验证码｜6 位 / 5 位 / 7 位 / 全空格,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv02_verify_code / test_bv02_code_is_trimmed_before_check
 BV-03,边界值,知识库（IT-K）,密码｜8 / 7 / 64 / 65 位,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv03_password / test_bv03_password_error_message_mentions_length
@@ -153,8 +153,8 @@ BV-05,边界值,知识库（IT-K）,体重｜2 / 20 / 300 / 301 / 0,P1,BV,已执
 BV-06,边界值,知识库（IT-K）,BMI 计算｜身高 0（除零）,P0,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv06_bmi_no_infinity / test_bv06_bmi_normal
 BV-07,边界值,知识库（IT-K）,年龄｜0 / 1 / 17 / 18 / 120 / 121,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv07_age / test_bv07_minor_flagged_as_warning
 BV-08,边界值,知识库（IT-K）,疾病史｜0 项 / 1 项 / 全选 20 项,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv08_diseases_saved
-BV-09,边界值,知识库（IT-K）,测评题目数｜1 题 / 8 题 / 200 题,P2,BV,未执行,,,未覆盖,
-BV-10,边界值,知识库（IT-K）,单页题量｜8 题 / 9 题,P2,BV,未执行,,,未覆盖,
+BV-09,边界值,知识库（IT-K）,测评题目数｜1 题 / 8 题 / 200 题,P2,BV,已执行（自动化）,三档全过：1 题模板可正常提交出报告；8 题模板完整作答；200 题模板接口不超时、不截断，题目数与配置一致。,模板 question_config 题数边界,已覆盖,tests/integration/test_boundary_cases.py::test_bv09_single_question_template_can_submit / test_bv09_eight_question_template / test_bv09_two_hundred_questions_not_degraded
+BV-10,边界值,知识库（IT-K）,单页题量｜8 题 / 9 题,P2,BV,已执行（自动化）,浏览器实测 8 项全过：8 题单页铺开且无分页控件；9 题自动分页为 8+1；第 2 页仅渲染剩余 1 题；跨页进度累计显示 9/9；翻回第 1 页答案仍在；草稿收到 9 题全量合并；零 JS 错误。实现中修掉一个真实缺陷：翻页时先改 AS.page 再收集答案，导致用新页切片读旧页 DOM，每次翻页丢一次作答。,Playwright + Chromium 实测，单页上限 8 题,已覆盖,_e2e_quiz_paging.py（8/8 PASS）；frontend/assets/app.js renderQuizPage/renderQuizPager
 BV-11,边界值,知识库（IT-K）,答案数值｜最小选项 / 最大选项 / 未选,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv11_required_answer_missing / test_bv11_optional_answer_may_be_empty
 BV-12,边界值,知识库（IT-K）,答案文本｜0 / 1 / 500 / 501 字,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv12_answer_text
 BV-13,边界值,知识库（IT-K）,特殊字符｜`<script>alert(1)</script>`、SQL 片段,P0,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_special_chars_stored_safely / test_bv13_sql_injection_attempt_is_not_executed
@@ -164,54 +164,54 @@ BV-16,边界值,知识库（IT-K）,等级阈值｜恰好等于等级分界线�
 BV-17,边界值,知识库（IT-K）,加权和｜各维度得分加权求和,P0,BV,已执行（自动化）,通过,,已覆盖,scoring_boundary::test_bv17_weighted_sum_matches_manual_calc / _weights_are_normalized_to_one
 BV-18,边界值,知识库（IT-K）,维度权重｜0 / 0.001 / 1 / 合计 1.001,P1,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv18_weight_sum_must_be_one / _zero_weight_allowed_with_warning / _negative_weight_rejected; scoring_boundary::test_bv18_bad_weight_sum_produces_warning / _good_weight_sum_has_no_warning / _zero_weight_dimension_warns
 BV-19,边界值,知识库（IT-K）,分页｜page=0 / 1 / 末页 / 超范围；page_size=0/1/100/101,P2,BV,已执行（自动化）,通过,,已覆盖,rules_boundary::test_bv19_paging / test_bv19_offset
-BV-20,边界值,知识库（IT-K）,时间范围｜起>止 / 起=止 / 跨时区,P2,BV,未执行,,,未覆盖,
+BV-20,边界值,知识库（IT-K）,时间范围｜起>止 / 起=止 / 跨时区,P2,BV,已执行（自动化）,起>止 明确报错；起=止 含当日；非法格式报错。三种边界行为均符合预期。,GET /dashboard/trend 时间范围校验,已覆盖,tests/integration/test_boundary_cases.py::test_bv20_trend_date_range_rejects_inverted / test_bv20_trend_bad_format_rejected / test_bv20_trend_same_day_inclusive
 BV-21,边界值,知识库（IT-K）,游客配额｜第 2 次测评 / 第 5 次查询 / 第 6 次查询,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv21_guest_assessment_quota / test_bv21_guest_query_quota
 BV-22,边界值,知识库（IT-K）,短票有效期｜第 59 秒 / 第 61 秒使用,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv22_stream_ticket_issued / test_bv22_expired_ticket_rejected
 BV-23,边界值,知识库（IT-K）,幂等窗口｜第 29 秒 / 第 31 秒同键,P1,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv23_idempotency_window
 BV-24,边界值,知识库（IT-K）,草稿有效期｜第 29 天 / 第 31 天,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv24_draft_expiry
 BV-25,边界值,知识库（IT-K）,咨询超时｜第 29 分钟 / 第 31 分钟未响应,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv25_consultation_timeout
-BV-26,边界值,知识库（IT-K）,注销期限｜注销后第 14 日 / 第 16 日,P1,BV,未执行,,,未覆盖,
+BV-26,边界值,知识库（IT-K）,注销期限｜注销后第 14 日 / 第 16 日,P1,BV,已执行（自动化）,未到保留期不告警；超期任务带逾期标记；删除任务列表仅管理员可访问。,GET /admin/deletion-tasks 逾期口径,已覆盖,tests/integration/test_boundary_cases.py::test_bv26_deletion_task_overdue_flag / test_bv26_deletion_tasks_requires_admin
 BV-27,边界值,知识库（IT-K）,认领期限｜第 6 天 / 第 8 天认领,P1,BV,已执行（自动化）,通过,,已覆盖,temporal_rules::test_bv27_claim_deadline
 BV-28,边界值,知识库（IT-K）,文件上传｜0 字节 / 50MB / 51MB / 非文档格式,P2,BV,部分执行（自动化）,部分通过,,部分覆盖,storage::test_bv28_knowledge_reject_unsupported_extension（仅扩展名守卫；0 字节/50MB/51MB 未覆盖）
 BV-29,边界值,知识库（IT-K）,并发提交｜同一测评 10 并发提交,P0,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv29_concurrent_submit_single_report
 BV-30,边界值,知识库（IT-K）,空列表｜各类列表无数据,P2,BV,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv30_empty_lists
-EX-01,异常与降级,知识库（IT-K）,短信服务不可用,P1,EX,未执行,,,未覆盖,
-EX-02,异常与降级,知识库（IT-K）,MySQL 连接失败,P1,EX,未执行,,,未覆盖,
-EX-03,异常与降级,知识库（IT-K）,向量库不可用,P0,EX,未执行,,,未覆盖,
-EX-04,异常与降级,知识库（IT-K）,模型超时,P0,EX,未执行,,,未覆盖,
-EX-05,异常与降级,知识库（IT-K）,模型 500,P0,EX,未执行,,,未覆盖,
-EX-06,异常与降级,知识库（IT-K）,模型返回空,P1,EX,未执行,,,未覆盖,
-EX-07,异常与降级,知识库（IT-K）,模型返回乱码/超长,P2,EX,未执行,,,未覆盖,
-EX-08,异常与降级,知识库（IT-K）,SSE 中途断连,P1,EX,未执行,,,未覆盖,
-EX-09,异常与降级,知识库（IT-K）,客户端刷新页面,P1,EX,未执行,,,未覆盖,
-EX-10,异常与降级,知识库（IT-K）,报告降级-状态,P0,EX,未执行,,,未覆盖,
-EX-11,异常与降级,知识库（IT-K）,报告降级-数据,P0,EX,未执行,,,未覆盖,
-EX-12,异常与降级,知识库（IT-K）,报告降级-重生成,P0,EX,未执行,,,未覆盖,
-EX-13,异常与降级,知识库（IT-K）,查询降级,P1,EX,未执行,,,未覆盖,
-EX-14,异常与降级,知识库（IT-K）,看板降级,P1,EX,未执行,,,未覆盖,
-EX-15,异常与降级,知识库（IT-K）,答案不丢失,P0,EX,未执行,,,未覆盖,
-SEC-01,安全与合规,知识库（IT-K）,越权读报告,P0,SEC,未执行,,,未覆盖,
-SEC-02,安全与合规,知识库（IT-K）,越权改资料,P0,SEC,未执行,,,未覆盖,
-SEC-03,安全与合规,知识库（IT-K）,越权批注,P0,SEC,未执行,,,未覆盖,
-SEC-04,安全与合规,知识库（IT-K）,水平越权枚举,P0,SEC,未执行,,,未覆盖,
+EX-01,异常与降级,知识库（IT-K）,短信服务不可用,P1,EX,已执行（自动化）,短信网关不可用时如实提示，不伪造发送成功,故障注入,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex01_sms_unavailable
+EX-02,异常与降级,知识库（IT-K）,MySQL 连接失败,P1,EX,已执行（自动化）,数据库故障返回业务错误，不泄露堆栈,统一异常处理 + SQLAlchemyError 捕获,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex02_db_failure_no_stack
+EX-03,异常与降级,知识库（IT-K）,向量库不可用,P0,EX,已执行（自动化）,向量库不可用时问答降级而非 500,Milvus 故障注入,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex03_vector_store_unavailable
+EX-04,异常与降级,知识库（IT-K）,模型超时,P0,EX,已执行（自动化）,模型超时返回可读错误，用户侧有明确提示,模型超时故障注入,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex04_model_timeout
+EX-05,异常与降级,知识库（IT-K）,模型 500,P0,EX,已执行（自动化）,模型连续 500 重试到上限后降级,重试上限 + 退避,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex05_model_500_retries_then_degrade
+EX-06,异常与降级,知识库（IT-K）,模型返回空,P1,EX,已执行（自动化）,模型返回空内容时不生成空白报告,空响应防护,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex06_model_empty_no_blank_report
+EX-07,异常与降级,知识库（IT-K）,模型返回乱码/超长,P2,EX,已执行（自动化）,乱码/超长输入被拒或安全截断，不打崩服务,入参校验,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex07_junk_oversize_text
+EX-08,异常与降级,知识库（IT-K）,SSE 中途断连,P1,EX,已执行（自动化）,SSE 中断保留已产出部分，不整体丢弃,流式中断处理,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex08_sse_interrupted_keeps_partial
+EX-09,异常与降级,知识库（IT-K）,客户端刷新页面,P1,EX,已执行（自动化）,前端刷新不触发报告重新生成,报告复用,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex09_refresh_does_not_regenerate
+EX-10,异常与降级,知识库（IT-K）,报告降级-状态,P0,EX,已执行（自动化）,降级语义明确：code=0 且 state=basic，不返回 50002,降级契约,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex10_degrade_state_semantics
+EX-11,异常与降级,知识库（IT-K）,报告降级-数据,P0,EX,已执行（自动化）,降级报告字段仍完整（结构不残缺）,降级数据完整性,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex11_degraded_data_complete
+EX-12,异常与降级,知识库（IT-K）,报告降级-重生成,P0,EX,已执行（自动化）,上游恢复后可重新生成出完整报告,恢复后重生成,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex12_regenerate_after_recovery
+EX-13,异常与降级,知识库（IT-K）,查询降级,P1,EX,已执行（自动化）,问答降级时提供检索片段作为兜底,degraded 分支,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex13_query_degrade_offers_fallback
+EX-14,异常与降级,知识库（IT-K）,看板降级,P1,EX,已执行（自动化）,看板降级结果确定，多次请求一致,规则计算无随机,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex14_dashboard_degrade_deterministic
+EX-15,异常与降级,知识库（IT-K）,答案不丢失,P0,EX,已执行（自动化）,多轮故障注入后用户答案不丢失,答案持久化,已覆盖,tests/integration/test_exception_degrade_cases.py::test_ex15_answers_survive_faults
+SEC-01,安全与合规,知识库（IT-K）,越权读报告,P0,SEC,已执行（自动化）,越权读取他人报告被拒,报告归属校验,已覆盖,tests/integration/test_security_cases.py::test_sec01_cross_user_report_read_denied
+SEC-02,安全与合规,知识库（IT-K）,越权改资料,P0,SEC,已执行（自动化）,越权修改他人资料被拒,资料归属校验,已覆盖,tests/integration/test_security_cases.py::test_sec02_cannot_modify_others_profile
+SEC-03,安全与合规,知识库（IT-K）,越权批注,P0,SEC,已执行（自动化）,未绑定营养师批注被拒,ErrCode.NOT_BOUND(90002),已覆盖,tests/integration/test_security_cases.py::test_sec03_non_bound_dietitian_cannot_annotate
+SEC-04,安全与合规,知识库（IT-K）,水平越权枚举,P0,SEC,已执行（自动化）,枚举他人 report_id 一律 404，响应体一致无差异,防水平越权枚举,已覆盖,tests/integration/test_security_cases.py::test_sec04_report_id_enumeration_uniform_404
 SEC-05,安全与合规,知识库（IT-K）,SQL 注入,P0,SEC,已执行（自动化）,通过,,已覆盖,boundary_api::test_bv13_sql_injection_attempt_is_not_executed
 SEC-06,安全与合规,知识库（IT-K）,XSS,P0,SEC,部分执行（自动化）,部分通过,,部分覆盖,boundary_api::test_bv13_special_chars_stored_safely（script 标签被安全存储）
-SEC-07,安全与合规,知识库（IT-K）,JWT 篡改,P0,SEC,未执行,,,未覆盖,
-SEC-08,安全与合规,知识库（IT-K）,令牌泄漏,P0,SEC,未执行,,,未覆盖,
+SEC-07,安全与合规,知识库（IT-K）,JWT 篡改,P0,SEC,已执行（自动化）,篡改签名的 JWT 被拒,JWT 签名校验,已覆盖,tests/integration/test_security_cases.py::test_sec07_tampered_jwt_rejected
+SEC-08,安全与合规,知识库（IT-K）,令牌泄漏,P0,SEC,已执行（自动化）,SSE 令牌不出现在 URL 中，改用 60 秒短票,?ticket= 短票机制,已覆盖,tests/integration/test_security_cases.py::test_sec08_sse_token_not_in_url
 SEC-09,安全与合规,知识库（IT-K）,游客额度刷取,P0,SEC,部分执行（自动化）,部分通过,,部分覆盖,temporal_rules::test_bv21_guest_query_quota（游客额度上限）
-SEC-10,安全与合规,知识库（IT-K）,敏感信息脱敏,P1,SEC,未执行,,,未覆盖,
-SEC-11,安全与合规,知识库（IT-K）,隐私政策与单独同意,P0,SEC,未执行,,,未覆盖,
-SEC-12,安全与合规,知识库（IT-K）,注销与删除,P0,SEC,未执行,,,未覆盖,
-SEC-13,安全与合规,知识库（IT-K）,免责声明,P0,SEC,未执行,,,未覆盖,
-SEC-14,安全与合规,知识库（IT-K）,审计日志,P1,SEC,未执行,,,未覆盖,
-SEC-15,安全与合规,知识库（IT-K）,传输安全,P1,SEC,未执行,,,未覆盖,
-PERF-01,性能测试,知识库（IT-K）,报告端到端时延,P0,PERF,未执行,,,未覆盖,
-PERF-02,性能测试,知识库（IT-K）,智能查询时延,P0,PERF,未执行,,,未覆盖,
-PERF-03,性能测试,知识库（IT-K）,看板时延,P1,PERF,未执行,,,未覆盖,
-PERF-04,性能测试,知识库（IT-K）,咨询并发,P0,PERF,未执行,,,未覆盖,
-PERF-05,性能测试,知识库（IT-K）,大表查询,P1,PERF,未执行,,,未覆盖,
-PERF-06,性能测试,知识库（IT-K）,代理缓冲,P2,PERF,未执行,,,未覆盖,
-PERF-07,性能测试,知识库（IT-K）,草稿保存,P1,PERF,未执行,,,未覆盖,
-PERF-08,性能测试,知识库（IT-K）,混合负载,P1,PERF,未执行,,,未覆盖,
-UI-01,交互兼容,知识库（IT-K）,移动端报告（<768px）,P1,UI,未执行,,,未覆盖,
-UI-02,交互兼容,知识库（IT-K）,读屏访问,P1,UI,未执行,,,未覆盖,
+SEC-10,安全与合规,知识库（IT-K）,敏感信息脱敏,P1,SEC,已执行（自动化）,列表接口不返回明文手机号（脱敏或密文）,phone_cipher + 脱敏展示,已覆盖,tests/integration/test_security_cases.py::test_sec10_no_plaintext_phone_in_lists
+SEC-11,安全与合规,知识库（IT-K）,隐私政策与单独同意,P0,SEC,已执行（自动化）,未单独同意不返回病史等敏感个人信息,单独同意状态位,已覆盖,tests/integration/test_security_cases.py::test_sec11_disease_history_requires_consent
+SEC-12,安全与合规,知识库（IT-K）,注销与删除,P0,SEC,已执行（自动化）,注销流水线覆盖业务数据与向量、对象存储登记,三处存储清理登记,已覆盖,tests/integration/test_security_cases.py::test_sec12_deletion_pipeline_clears_user_data
+SEC-13,安全与合规,知识库（IT-K）,免责声明,P0,SEC,已执行（自动化）,AI 生成内容均带免责声明,disclaimer 字段,已覆盖,tests/integration/test_security_cases.py::test_sec13_disclaimer_present
+SEC-14,安全与合规,知识库（IT-K）,审计日志,P1,SEC,已执行（自动化）,普通用户无法修改或删除审计日志,审计日志只读,已覆盖,tests/integration/test_security_cases.py::test_sec14_audit_log_immutable_to_users
+SEC-15,安全与合规,知识库（IT-K）,传输安全,P1,SEC,已执行（自动化）,生产环境对 http 请求做 HTTPS 跳转,ENV=production 行为,已覆盖,tests/integration/test_security_cases.py::test_sec15_https_redirect_in_production
+PERF-01,性能测试,知识库（IT-K）,报告端到端时延,P0,PERF,已执行（自动化）,真实服务实测 0.46s，首字节 ≤2s、整体 ≤10s 均达标。本条原先每次回归都以「无历史报告」静默跳过——根因是用例请求了不存在的 GET /reports 列表端点（report_router 只有 /{id}、/annotation、/pdf），404 被当成无数据。已改用 GET /assessments 并在无历史记录时现造一份（发起→作答→提交，与产品链路一致），指标现在真的在测。,真实服务测量（SMOKE_BASE_URL）；GET /assessments/{id}/report/stream?ticket=,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf01_report_latency（含 _completed_record 样本准备）
+PERF-02,性能测试,知识库（IT-K）,智能查询时延,P0,PERF,已执行（自动化）,未达标，如实记录：真实服务 47 条不重复问题首字节 P95=2.137s（门槛 1.5s）、完整回答 P95=12.474s（门槛 8s），3 条失败。分段实测：本地检索稳态 0.05s、上游模型裸调首 token 0.717s、总 9.366s——耗时主要在第三方模型生成速度，非本项目代码缺陷。缓存命中路径 20~40ms。,模型 Qwen/Qwen2.5-72B-Instruct（第三方）；_perf02_probe.py / _perf02_breakdown.py 实测,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf02_chat_latency（实测未达标，保留失败结论）
+PERF-03,性能测试,知识库（IT-K）,看板时延,P1,PERF,已执行（自动化）,图表查询 20 次 P95 ≤1.5s；智能解读 ≤5s，均达标。,真实服务测量,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf03_dashboard_latency
+PERF-04,性能测试,知识库（IT-K）,咨询并发,P0,PERF,已执行（自动化）,并发提交咨询全部接入不丢，用户侧有排队反馈。,并发提交实测,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf04_consultation_concurrency
+PERF-05,性能测试,知识库（IT-K）,大表查询,P1,PERF,已执行（自动化）,本机无法造到 300 万行量级，如实按执行计划验证：报告表常用查询走索引，不退化为全表扫。断言消息带实际行数与命中索引。,EXPLAIN 执行计划（等效口径，如实说明差异）,部分覆盖,tests/integration/test_perf_ui_cases.py::test_perf05_large_table_query
+PERF-06,性能测试,知识库（IT-K）,代理缓冲,P2,PERF,已执行（自动化）,本机无企业代理，如实断言 SSE 响应头已带禁止缓冲标记（X-Accel-Buffering: no / no-cache），避免上线被 Nginx 缓冲。,响应头断言（等效口径，如实说明差异）,部分覆盖,tests/integration/test_perf_ui_cases.py::test_perf06_proxy_buffering
+PERF-07,性能测试,知识库（IT-K）,草稿保存,P1,PERF,已执行（自动化）,并发保存草稿 P95 ≤200ms，达标。,真实服务测量,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf07_draft_save
+PERF-08,性能测试,知识库（IT-K）,混合负载,P1,PERF,已执行（自动化）,按 1:5:20 比例混跑，无 5xx，P95 达标。,混合负载实测,已覆盖,tests/integration/test_perf_ui_cases.py::test_perf08_mixed_load
+UI-01,交互兼容,知识库（IT-K）,移动端报告（<768px）,P1,UI,已执行（自动化）,静态断言：存在 <768px 响应式断点，报告区块在窄屏不溢出。（像素级视觉回归属人工验收范围，未做。）,HTML/CSS 静态断言,部分覆盖,tests/integration/test_perf_ui_cases.py::test_ui01_mobile_report_responsive
+UI-02,交互兼容,知识库（IT-K）,读屏访问,P1,UI,已执行（自动化）,静态断言通过：图表有等价数据表、语义标签齐全、并补齐 prefers-reduced-motion 与 :focus-visible 无障碍样式（本轮修复项）。,HTML/CSS 静态断言,已覆盖,tests/integration/test_perf_ui_cases.py::test_ui02_screen_reader_equivalents

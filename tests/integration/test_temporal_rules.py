@@ -206,8 +206,18 @@ def test_bv27_claim_deadline(client, run_id, auth_factory, cleanup):
     cleanup.append(lambda s, g=gh: s.execute(
         text("delete from assessment_record where guest_token=:g"), {"g": g}))
 
+    r0 = client.post("/api/v1/assessments/guest/claim", headers=headers,
+                     json={"guest_token": token}).json()
+    assert r0["code"] == ErrCode.PARAM_INVALID, \
+        f"仅凭 guest_token 不得认领（设计评审 M2）：{r0}"
+
+    phone = f"136{str(run_id)[-8:]}"
+    sent = client.post("/api/v1/auth/sms/send", json={"phone": phone}).json()
+    assert sent["code"] == 0, sent
+
     r = client.post("/api/v1/assessments/guest/claim", headers=headers,
-                    json={"guest_token": token}).json()
+                    json={"guest_token": token, "phone": phone,
+                          "verify_code": sent["data"]["demo_code"]}).json()
     assert r["code"] == 0, r
     # 仅 6 天内那条被认领，8 天前的超期记录被拒绝
     assert r["data"]["claimed_assessments"] == 1, r

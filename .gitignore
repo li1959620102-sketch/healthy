@@ -25,9 +25,10 @@ _*.tmp
 # ---------- 备份 / 下载 / 本地工具状态（不入库）----------
 backups/
 downloads/
-_integration_result.json
+_*_result.json
 _junit*.xml
 _loadtest_*.json
+*.bak.csv
 chroma.sqlite3
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*/
 .workbuddy/

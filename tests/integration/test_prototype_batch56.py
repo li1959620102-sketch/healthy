@@ -114,9 +114,9 @@ def test_plan_shopping_list_aggregates_and_excludes_avoid(client, auth_factory,
     assert r["data"]["total"] == len(names)
 
 
-def test_dietitian_export_customers(client, auth_factory, run_id, cleanup, minio_required):
+def test_dietitian_export_customers(client, approved_dietitian, run_id, cleanup, minio_required):
     uid = f"{run_id}_ex"
-    headers = auth_factory(uid, "dietitian")
+    headers = approved_dietitian(uid)     # 导出接口要求资质已审核
     cleanup.append(lambda s, u=uid: _rm_minio(u))          # 清理 MinIO 导出产物
     r = client.get("/api/v1/nutritionists/me/customers/export?fmt=csv", headers=headers).json()
     assert r["code"] == 0, r
