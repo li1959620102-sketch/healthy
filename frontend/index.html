@@ -366,6 +366,34 @@
           <div id="dtLicenseBody" class="desc">加载中…</div>
         </div>
 
+        <div class="section-head" data-page-node-id="dtConsultHead">
+          <h2 data-page-node-id="dtConsultTitleH">咨询接待</h2>
+          <div>
+            <button class="btn" onclick="loadConsultBoard()" data-page-node-id="dtConsultRefresh">刷新</button>
+          </div>
+        </div>
+        <div class="card" data-page-node-id="dtConsultCard">
+          <div class="grid2" data-page-node-id="dtConsultGrid">
+            <div>
+              <div class="desc" style="margin-bottom:6px">待接入队列（接入后即可接待）</div>
+              <div id="dtPendingList" data-page-node-id="dtPendingList"><div class="desc">加载中…</div></div>
+              <div class="desc" style="margin:12px 0 6px">我的咨询</div>
+              <div id="dtConsultList" data-page-node-id="dtConsultList"><div class="desc">加载中…</div></div>
+            </div>
+            <div>
+              <div class="desc" id="dtConsultWhich" data-page-node-id="dtConsultWhich">从左侧选择一条咨询开始接待</div>
+              <div id="dtConsultMsgs" class="dt-msgs" data-page-node-id="dtConsultMsgs"></div>
+              <textarea id="dtConsultInput" rows="3" placeholder="输入回复内容…（可先点「AI 辅助建议」生成草稿，再自行修改）" data-page-node-id="dtConsultInput"></textarea>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap" data-page-node-id="dtConsultActions">
+                <button class="btn" onclick="genAiSuggestion()" data-page-node-id="dtAiBtn">AI 辅助建议</button>
+                <button class="btn primary" onclick="sendConsultMsg()" data-page-node-id="dtSendBtn">发送</button>
+                <span class="desc" id="dtAiNote" data-page-node-id="dtAiNote"></span>
+              </div>
+              <div class="desc" id="dtAiRefs" style="margin-top:6px" data-page-node-id="dtAiRefs"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="section-head" data-page-node-id="01O3pFiJTHUspUPZ6T8Xjb">
           <h2 data-page-node-id="TStobVoDOkoGlEFYCtmxhT">重点客户</h2>
           <div data-page-node-id="ouE9SEKFqPXUQLqocYML9n">
@@ -491,6 +519,35 @@
     </div>
   </div>
 
+  <div class="grid4" style="margin-top:14px">
+    <div class="card">
+      <div class="desc">DAU（当日活跃）</div>
+      <div class="num" id="opsDau">—</div>
+      <div class="desc" id="opsDauMeta">—</div>
+    </div>
+    <div class="card">
+      <div class="desc">MAU（30 日活跃）</div>
+      <div class="num" id="opsMau">—</div>
+      <div class="desc" id="opsMauMeta">—</div>
+    </div>
+    <div class="card">
+      <div class="desc">本月测评</div>
+      <div class="num" id="opsMonth">—</div>
+      <div class="desc" id="opsMonthMeta">自然月累计</div>
+    </div>
+    <div class="card">
+      <div class="desc">智能咨询占比</div>
+      <div class="num" id="opsAiRatio">—</div>
+      <div class="desc" id="opsAiRatioMeta">—</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>测评模板使用率</h3>
+    <div id="opsTemplates" class="desc" style="margin-top:8px">—</div>
+    <div class="desc" id="opsTemplatesMeta" style="margin-top:6px">—</div>
+  </div>
+
   <div class="card" style="margin-top:14px">
     <h3>近 7 日测评趋势</h3>
     <div class="mini-chart" id="opsTrend" style="height:120px;margin-top:10px"></div>
@@ -587,6 +644,7 @@
         <!-- 登录通道（小号分段控件） -->
         <div class="lp-chans">
           <button class="lp-chan active" id="tabPhone" onclick="switchLoginTab('phone')">手机号</button>
+          <button class="lp-chan" id="tabEmail" onclick="switchLoginTab('email')">邮箱</button>
           <button class="lp-chan" id="tabAccount" onclick="switchLoginTab('account')">账号</button>
         </div>
 
@@ -613,6 +671,32 @@
           <div class="lp-field">
             <label>姓名</label>
             <input id="lgName" placeholder="注册时填写，可留空" />
+          </div>
+        </div>
+
+        <!-- 邮箱通道：注册=邮箱+验证码+密码+姓名；登录=邮箱+密码 -->
+        <div id="paneEmail" style="display:none">
+          <div class="lp-field">
+            <label>邮箱</label>
+            <input id="egEmail" type="email" placeholder="请输入邮箱，如 name@example.com" />
+          </div>
+          <div class="lp-field" id="rowEmailCode">
+            <label>验证码</label>
+            <div class="lp-inline">
+              <input id="egCode" maxlength="6" inputmode="numeric" placeholder="注册时填写验证码" />
+              <button class="lp-code-btn" id="btnSendEmailCode" onclick="sendEmailCode()">获取验证码</button>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label>密码</label>
+            <div class="lp-rel">
+              <input id="egPwd" type="password" placeholder="请输入密码（8–64 位）" />
+              <button type="button" class="lp-eye" onclick="togglePwd(this)" aria-label="显示密码"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label>姓名</label>
+            <input id="egName" placeholder="注册时填写，可留空" />
           </div>
         </div>
 
@@ -646,7 +730,7 @@
 
         <div class="lp-link" id="lpLink" onclick="checkHealth()" title="点此重新检测"><i id="lpLinkDot"></i><span id="lpLinkText">正在检测后端…</span></div>
 
-        <p class="hint" id="loginHint">首次使用点「立即注册」：手机号 → 获取验证码 → 设置密码（本地开发环境为演示模式，验证码直接显示在页面上；生产环境走真实短信）。</p>
+        <p class="hint" id="loginHint">首次使用点「立即注册」：手机号或邮箱 → 获取验证码 → 设置密码（本地开发环境为演示模式，验证码直接显示在页面上；生产环境走真实短信/邮件网关）。</p>
       </section>
 
       <p class="lp-foot">药食同源 · 食药两用 · 养生之道</p>

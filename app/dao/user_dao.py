@@ -41,6 +41,17 @@ class UserDAO:
             session.close()
 
     @staticmethod
+    def get_by_email_hash(email_hash: str) -> Optional[SysUser]:
+        """按邮箱 HMAC 检索（邮箱登录 / 注册查重）。入参须为归一化后邮箱的哈希。"""
+        if not email_hash:
+            return None
+        session = get_session()
+        try:
+            return session.query(SysUser).filter_by(email_hash=email_hash, deleted_at=None).first()
+        finally:
+            session.close()
+
+    @staticmethod
     def create(user_data: dict) -> SysUser:
         session = get_session()
         try:

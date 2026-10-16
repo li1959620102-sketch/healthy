@@ -187,12 +187,13 @@ class ConsultationDAO:
     # ---------------- 消息 ---------------- #
     @staticmethod
     def add_message(consultation_id: int, sender_type: str, content: str,
-                    session=None) -> ConsultationMessage:
+                    session=None, ai_assisted: bool = False) -> ConsultationMessage:
         own = session is None
         s = session or get_session()
         try:
             msg = ConsultationMessage(consultation_id=consultation_id, sender_type=sender_type,
-                                      content_type="text", content=content)
+                                      content_type="text", content=content,
+                                      ai_assisted=bool(ai_assisted))
             s.add(msg)
             if own:
                 s.commit()

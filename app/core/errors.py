@@ -49,6 +49,8 @@ class ErrCode:
     QUERY_RATE_LIMITED = 60002
     SMS_RATE_LIMITED = 60003    # 短信验证码发送过频（60s 限频）
     SMS_SEND_FAILED = 60004     # 短信网关未配置 / 发送失败（绝不伪造“已发送”）
+    EMAIL_RATE_LIMITED = 60005  # 邮箱验证码发送过频（与短信同一套限频口径）
+    EMAIL_SEND_FAILED = 60006   # 邮件网关未配置 / 发送失败（绝不伪造“已发送”）
     # 7xxxx 看板 / 分析（预留）
     # 8xxxx 管理 / 知识库
     KB_DOC_NOT_FOUND = 80001

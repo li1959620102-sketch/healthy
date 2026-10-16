@@ -52,24 +52,44 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
-# ---------------------------- 手机号加密 / 哈希 ----------------------------
+# ---------------------------- 手机号 / 邮箱 加密与哈希 ----------------------------
 # 设计说明（数据库设计 V1.1 §3.1）：
-#   phone_hash  = HMAC-SHA256(手机号, SECRET_KEY 派生密钥) —— 用于唯一约束与等值检索（不可逆）
-#   phone_cipher= AES-256-GCM(手机号) —— 可逆密文，仅在确需展示/发短信时解密
+#   xxx_hash   = HMAC-SHA256(明文, SECRET_KEY 派生密钥) —— 用于唯一约束与等值检索（不可逆）
+#   xxx_cipher = AES-256-GCM(明文) —— 可逆密文，仅在确需展示/下发时解密
 # 两者均由 SECRET_KEY 派生密钥，标准库 + cryptography 实现，不引入额外对称密钥配置。
+#
+# 邮箱与手机号各用一套派生标签（...-v1 后缀）：同一份明文在两个字段下得到不同的
+# 哈希/密文，避免"把手机号的密文塞进邮箱列"这类串字段错误被静默接受。
+# 注意：标签是不可改的既成事实——改动会让已入库的手机号全部解密失败。
 
 _PHONE_HMAC_KEY: Optional[bytes] = None
 _PHONE_AES_KEY: Optional[bytes] = None
+_EMAIL_HMAC_KEY: Optional[bytes] = None
+_EMAIL_AES_KEY: Optional[bytes] = None
+
+
+def _derive_keys(hmac_label: bytes, aes_label: bytes) -> tuple:
+    """由 SECRET_KEY 派生 HMAC 与 AES 密钥（调用方自行缓存）。"""
+    material = settings.SECRET_KEY.encode("utf-8")
+    hmac_key = hmac.new(material, hmac_label, hashlib.sha256).digest()
+    aes_key = hmac.new(material, aes_label, hashlib.sha256).digest()
+    return hmac_key, aes_key
 
 
 def _phone_keys() -> tuple:
-    """由 SECRET_KEY 派生 HMAC 与 AES 密钥（进程内缓存）。"""
+    """手机号密钥（进程内缓存）。"""
     global _PHONE_HMAC_KEY, _PHONE_AES_KEY
     if _PHONE_HMAC_KEY is None:
-        material = settings.SECRET_KEY.encode("utf-8")
-        _PHONE_HMAC_KEY = hmac.new(material, b"phone-hash-v1", hashlib.sha256).digest()
-        _PHONE_AES_KEY = hmac.new(material, b"phone-aes-v1", hashlib.sha256).digest()
+        _PHONE_HMAC_KEY, _PHONE_AES_KEY = _derive_keys(b"phone-hash-v1", b"phone-aes-v1")
     return _PHONE_HMAC_KEY, _PHONE_AES_KEY
+
+
+def _email_keys() -> tuple:
+    """邮箱密钥（与手机号不同标签，进程内缓存）。"""
+    global _EMAIL_HMAC_KEY, _EMAIL_AES_KEY
+    if _EMAIL_HMAC_KEY is None:
+        _EMAIL_HMAC_KEY, _EMAIL_AES_KEY = _derive_keys(b"email-hash-v1", b"email-aes-v1")
+    return _EMAIL_HMAC_KEY, _EMAIL_AES_KEY
 
 
 def phone_hash(phone: str) -> str:
@@ -96,6 +116,54 @@ def decrypt_phone(cipher: bytes) -> Optional[str]:
         return AESGCM(aes_key).decrypt(cipher[:12], cipher[12:], None).decode("utf-8")
     except Exception:
         return None
+
+
+def email_hash(email: str) -> str:
+    """邮箱 HMAC-SHA256 十六进制（64 位）。入参须先归一化（小写去空格）。"""
+    key, _ = _email_keys()
+    return hmac.new(key, str(email).strip().lower().encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def encrypt_email(email: str) -> bytes:
+    """邮箱 AES-256-GCM 加密，返回 nonce+密文+tag（VARBINARY 存储）。"""
+    _, aes_key = _email_keys()
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    nonce = secrets.token_bytes(12)
+    return nonce + AESGCM(aes_key).encrypt(nonce, str(email).strip().lower().encode("utf-8"), None)
+
+
+def decrypt_email(cipher: bytes) -> Optional[str]:
+    """解密邮箱密文；密文不合法或密钥不匹配时返回 None（不抛异常）。"""
+    if not cipher:
+        return None
+    try:
+        _, aes_key = _email_keys()
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        return AESGCM(aes_key).decrypt(cipher[:12], cipher[12:], None).decode("utf-8")
+    except Exception:
+        return None
+
+
+# ---------------------------- 脱敏展示（唯一源） ----------------------------
+# 页面、日志、注册响应都要给"看得见但不完整"的手机号/邮箱。
+# 三处各写一遍就容易出现"某处忘了脱敏、把明文带出去"，故收敛到这里。
+
+def mask_phone(phone: Optional[str]) -> str:
+    """手机号脱敏：139****0010。非法长度一律返回 ***。"""
+    value = str(phone or "").strip()
+    if len(value) != 11:
+        return "***"
+    return value[:3] + "****" + value[-4:]
+
+
+def mask_email(email: Optional[str]) -> str:
+    """邮箱脱敏：ab***@example.com（本地名只留前 2 位）。"""
+    value = str(email or "").strip().lower()
+    local, at, domain = value.partition("@")
+    if not at or not local or not domain:
+        return "***"
+    head = local[:2] if len(local) > 2 else local[:1]
+    return f"{head}***@{domain}"
 
 
 def _b64url(raw: bytes) -> str:

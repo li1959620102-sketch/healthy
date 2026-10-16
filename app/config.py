@@ -1,15 +1,12 @@
 import os
-from typing import Optional
 
 from dotenv import load_dotenv
 
-# 加载.env文件
-# 【关键修改】指定.env文件路径
+# 加载 .env：必须按**本文件所在项目根目录**定位，否则从别的 cwd 启动会静默读不到配置
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))  # 指定完整路径
-# load_dotenv()
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class Settings:
     ENV: str = os.getenv("ENV", "development").strip().lower()
     # Ollama配置
@@ -23,11 +20,7 @@ class Settings:
     EMBEDDING_STRATEGY: str = os.getenv("EMBEDDING_STRATEGY")
     SILICON_FLOW_API_KEY: str = os.getenv("SILICON_FLOW_API_KEY")
     SILICON_FLOW_BASE_URL: str = os.getenv("SILICON_FLOW_BASE_URL")
-    SILICON_FLOW_RERANK: str = os.getenv("SILICON_FLOW_RERANK")
-    # API配置
-    API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
-    API_PORT: int = int(os.getenv("API_PORT", "8000"))
-    API_KEY: Optional[str] = os.getenv("API_KEY")
+    SILICON_FLOW_RERANK: str = os.getenv("SILICON_FLOW_RERANK")  # 预留：rerank 阶段尚未接入，管线当前只用相似度阈值
 
     # MinIO配置
     # 登录令牌与演示账号
@@ -66,7 +59,6 @@ class Settings:
     MYSQL_DB: str = os.getenv("MYSQL_DB")
     MYSQL_URI = os.getenv("MYSQL_URI")
 
-    MILVUS_URI: str = os.getenv("MILVUS_URI")
     MILVUS_HOST: str = os.getenv("MILVUS_HOST", "127.0.0.1")  # 2026-09-12：默认本机（原 192.168.128.210 已失联）
     MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
     MILVUS_DEFAULT_COLLECTION: str = os.getenv("MILVUS_DEFAULT_COLLECTION", "ai_health_kb_v1")
@@ -84,13 +76,26 @@ class Settings:
     SMS_RESEND_INTERVAL: int = int(os.getenv("SMS_RESEND_INTERVAL", "60"))  # 重发限频（秒）
     SMS_CODE_MAX_ATTEMPTS: int = int(os.getenv("SMS_CODE_MAX_ATTEMPTS", "5"))  # 最大校验失败次数
     SMS_DEMO_MODE: bool = os.getenv("SMS_DEMO_MODE", "false").lower() == "true"
+
+    # 邮箱验证码（SMTP；缺任一必填项 = 未配置，发码端返回明确错误而不伪造成功）
+    # FR-U-01：手机号/邮箱双通道注册，邮箱通道复用同一套「发码 / 限频 / 验码」流程。
+    MAIL_PROVIDER: str = os.getenv("MAIL_PROVIDER", "smtp")
+    MAIL_HOST: str = os.getenv("MAIL_HOST", "")
+    MAIL_PORT: int = int(os.getenv("MAIL_PORT", "465"))
+    MAIL_USER: str = os.getenv("MAIL_USER", "")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
+    MAIL_FROM: str = os.getenv("MAIL_FROM", "")          # 发件人；留空则回退为 MAIL_USER
+    MAIL_USE_SSL: bool = os.getenv("MAIL_USE_SSL", "true").lower() == "true"   # 465 端口用 SSL
+    MAIL_USE_TLS: bool = os.getenv("MAIL_USE_TLS", "false").lower() == "true"  # 587 端口用 STARTTLS
+    MAIL_TIMEOUT: int = int(os.getenv("MAIL_TIMEOUT", "10"))
+    EMAIL_CODE_TTL: int = int(os.getenv("EMAIL_CODE_TTL", "300"))              # 验证码有效期（秒）
+    EMAIL_RESEND_INTERVAL: int = int(os.getenv("EMAIL_RESEND_INTERVAL", "60"))  # 重发限频（秒）
+    EMAIL_CODE_MAX_ATTEMPTS: int = int(os.getenv("EMAIL_CODE_MAX_ATTEMPTS", "5"))  # 最大校验失败次数
+    MAIL_DEMO_MODE: bool = os.getenv("MAIL_DEMO_MODE", "false").lower() == "true"
     KB_MIN_SIMILARITY: float = float(os.getenv("KB_MIN_SIMILARITY", "0.55"))  # RAG 检索阈值（COSINE，低于则视为无相关内容）
 
-    # 文件上传
-    MEDIA_URL = '/media/'
-    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+    # 文件上传（大小上限由 app/utils/file_handler.py 在读取前后各校验一次）
     FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
-    DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 
 
 # 创建配置实例
@@ -108,6 +113,8 @@ def validate_runtime_settings() -> None:
         errors.append("SECRET_KEY 长度不得少于 32 个字符")
     if settings.SMS_DEMO_MODE:
         errors.append("生产环境禁止开启 SMS_DEMO_MODE")
+    if settings.MAIL_DEMO_MODE:
+        errors.append("生产环境禁止开启 MAIL_DEMO_MODE")
     if "*" in settings.CORS_ORIGINS:
         errors.append("生产环境 CORS_ORIGINS 禁止使用通配符")
     if errors:

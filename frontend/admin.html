@@ -75,6 +75,7 @@
   .bar .track{background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
   .bar .fill{height:100%;background:linear-gradient(90deg,#7fc3ab,var(--brand));border-radius:6px;transition:width .3s}
   .bar .val{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  #ovTemplates .bar{grid-template-columns:190px 1fr 130px}
   .thr-row{display:grid;grid-template-columns:190px 110px 1fr;gap:14px;align-items:center;
     padding:12px 0;border-bottom:1px solid var(--line)}
   .thr-row:last-child{border-bottom:none}
@@ -131,6 +132,11 @@
   <!-- ============ 运营概览 ============ -->
   <section id="tab-overview">
     <div class="grid" id="ovCards"></div>
+    <div class="panel">
+      <h2>测评模板使用率 <span class="tag">assessment_record.template_id</span>
+        <span class="spacer"></span><span class="foot" id="ovTplAt"></span></h2>
+      <div class="bars" id="ovTemplates"></div>
+    </div>
     <div class="panel">
       <h2>报告等级分布 <span class="tag">assessment_report.level</span>
         <span class="spacer"></span><span class="foot" id="ovAt"></span></h2>
@@ -316,19 +322,27 @@
 
   /* ------------------------- 概览 ------------------------- */
   var OVERVIEW_KEYS = [
-    ['users', '注册用户'], ['new_users_today', '今日新增'], ['dietitians', '已认证营养师'],
-    ['pending_dietitians', '待审资质'], ['assessments', '测评记录'], ['reports', '生成报告'],
-    ['consultations', '人工咨询'], ['knowledge_docs', '知识库文档']
+    ['users', '注册用户'], ['new_users_today', '今日新增'], ['dau', 'DAU 当日活跃'],
+    ['mau', 'MAU 30 日活跃'], ['month_assessment', '本月测评'],
+    ['ai_ratio_pct', '智能咨询占比'], ['dietitians', '已认证营养师'],
+    ['pending_dietitians', '待审资质'], ['assessments', '测评记录'],
+    ['reports', '生成报告'], ['consultations', '人工咨询'],
+    ['knowledge_docs', '知识库文档']
   ];
 
   var loadOverview = guard(function () {
     return API.admin.overview().then(function (d) {
       d = d || {};
+      // 占比以百分数展示，避免 0.0 看起来像"没有"；无数据一律 —，不补零
+      d.ai_ratio_pct = (d.ai_ratio === null || d.ai_ratio === undefined)
+        ? null : Math.round(Number(d.ai_ratio) * 1000) / 10 + '%';
       var html = '';
       OVERVIEW_KEYS.forEach(function (k) {
         var v = d[k[0]];
+        var text = (v === null || v === undefined) ? '—'
+          : (typeof v === 'number' ? Number(v).toLocaleString() : String(v));
         html += '<div class="card"><div class="k">' + k[1] + '</div><div class="v">' +
-          (v === null || v === undefined ? '—' : Number(v).toLocaleString()) + '</div></div>';
+          text + '</div></div>';
       });
       var avg = (d.avg_score === null || d.avg_score === undefined) ? '—' : d.avg_score;
       html += '<div class="card"><div class="k">平均得分</div><div class="v">' + avg +
@@ -363,6 +377,27 @@
         });
       }
       $('ovLevels').innerHTML = bh;
+
+      // 模板使用率：逐模板占比 + 汇总口径
+      var tu = d.template_usage || {};
+      var tuItems = tu.items || [];
+      var tuTotal = Number(tu.total_records) || 0;
+      if (!tuItems.length) {
+        $('ovTemplates').innerHTML = '<div class="empty">暂无模板数据</div>';
+        $('ovTplAt').textContent = '—';
+      } else {
+        $('ovTemplates').innerHTML = tuItems.map(function (it) {
+          var pct = tuTotal ? (Number(it.records) || 0) * 100 / tuTotal : 0;
+          var st = it.status === 'published' ? '' : '（' + esc(it.status || '未发布') + '）';
+          return '<div class="bar"><span>' + esc(it.name || it.code || ('#' + it.template_id)) + st +
+            '</span><span class="track"><span class="fill" style="width:' + pct.toFixed(1) +
+            '%"></span></span><span class="val">' + (Number(it.records) || 0).toLocaleString() +
+            '（' + pct.toFixed(1) + '%）</span></div>';
+        }).join('');
+        $('ovTplAt').textContent = '共 ' + (tu.template_count || 0) + ' 个模板 · 已使用 ' +
+          (tu.used_template_count || 0) + ' 个 · 已发布 ' + (tu.published_template_count || 0) +
+          ' 个 · 累计 ' + tuTotal.toLocaleString() + ' 次（占比按有模板归属的记录计算）';
+      }
       $('ovAt').textContent = '数据来自 /admin/overview（实时统计）';
     });
   });

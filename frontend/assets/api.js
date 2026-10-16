@@ -223,13 +223,17 @@
     /* A. 认证 */
     auth: {
       register: function (b) { return post('/api/v1/auth/register', b); },
-      login: function (username, password, phone) {
+      login: function (username, password, phone, email) {
         var body = { password: password };
-        if (phone) { body.phone = phone; } else { body.username = username; }
+        // 三通道互斥：账号 > 手机号 > 邮箱（与后端优先级一致）
+        if (username) { body.username = username; }
+        else if (phone) { body.phone = phone; }
+        else if (email) { body.email = email; }
         return post('/api/v1/auth/login', body);
       },
       guest: function () { return post('/api/v1/auth/guest', {}); },
       sendSms: function (phone) { return post('/api/v1/auth/sms/send', { phone: phone }); },
+      sendEmail: function (email) { return post('/api/v1/auth/email/send', { email: email }); },
       refresh: function (refreshToken) { return post('/api/v1/auth/token/refresh', { refresh_token: refreshToken }); },
       logout: function () { return post('/api/v1/auth/logout', {}, true); },
       streamTicket: function () { return post('/api/v1/auth/stream-ticket', {}, true); }
@@ -312,8 +316,19 @@
       accept: function (id) { return post('/api/v1/consultations/' + id + '/accept', {}, true); },
       close: function (id) { return post('/api/v1/consultations/' + id + '/close', {}, true); },
       messages: function (id, params) { return get('/api/v1/consultations/' + id + '/messages' + qs(params), true); },
-      send: function (id, content) { return post('/api/v1/consultations/' + id + '/messages', { content: content }, true); },
-      rate: function (id, score, comment) { return post('/api/v1/consultations/' + id + '/rating', { score: score, comment: comment || '' }, true); }
+      send: function (id, content, aiAssisted) {
+        var body = { content: content };
+        if (aiAssisted) { body.ai_assisted = true; }   // 来源标记：本条在 AI 草稿基础上定稿
+        return post('/api/v1/consultations/' + id + '/messages', body, true);
+      },
+      aiSuggestion: function (id, hint) {
+        return post('/api/v1/consultations/' + id + '/ai-suggestion', { hint: hint || '' }, true);
+      },
+      /* 入参字段名以实现为准：RateConsultReq = {rating, comment}（此前误写 score，调用必然 90001） */
+      rate: function (id, rating, comment) {
+        return post('/api/v1/consultations/' + id + '/rating',
+          { rating: rating, comment: comment || '' }, true);
+      }
     },
 
     /* I. 看板 */

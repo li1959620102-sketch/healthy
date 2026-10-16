@@ -10,10 +10,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.schemas.platform import (
-    RegisterReq, LoginReq, RefreshReq, SmsSendReq,
+    RegisterReq, LoginReq, RefreshReq, SmsSendReq, EmailSendReq,
 )
 from app.services.user_service import UserService
 from app.services.sms_service import sms_service
+from app.services.email_code_service import email_code_service
 from app.core.responses import success, error
 from app.core.errors import ErrCode, BizError
 from app.core.deps import get_current_user
@@ -25,20 +26,36 @@ from app.utils.security import (
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 
-@router.post("/register", summary="手机号/账号注册",
-             description="双通道：①手机号 + 短信验证码 + 密码（推荐）；②账号 + 密码（保留兼容）。手机号密文存储。")
+@router.post("/register", summary="手机号/邮箱/账号注册",
+             description="三通道（互斥，只能选一种）：①手机号 + 短信验证码 + 密码；"
+                         "②邮箱 + 邮箱验证码 + 密码；③账号 + 密码（保留兼容）。"
+                         "手机号与邮箱均密文存储、HMAC 检索。")
 async def register(body: RegisterReq):
     has_phone = bool(body.phone)
+    has_email = bool(body.email)
+    has_username = bool(body.username)
+
+    # 通道互斥：三种方式混着填无法判断"用哪个身份来验证"，直接拒绝而不是猜
+    if sum([has_phone, has_email, has_username]) > 1:
+        raise BizError(ErrCode.PARAM_INVALID, "手机号、邮箱、账号只能选择一种方式注册")
+    if not (has_phone or has_email or has_username):
+        raise BizError(ErrCode.PARAM_INVALID, "请填写手机号、邮箱或登录账号")
+
+    # 验证码必须与目标成对出现（只给码不给号 / 只给号不给码都拒绝）
     if has_phone != bool(body.verify_code):
         raise BizError(ErrCode.PARAM_INVALID, "手机号注册需同时提供短信验证码")
-    if has_phone and body.username:
-        raise BizError(ErrCode.PARAM_INVALID, "手机号注册无需填写账号，登录直接用手机号")
-    if not has_phone and not body.username:
-        raise BizError(ErrCode.PARAM_INVALID, "请填写手机号或登录账号")
+    if has_email != bool(body.email_code):
+        raise BizError(ErrCode.PARAM_INVALID, "邮箱注册需同时提供邮箱验证码")
+
     try:
         if has_phone:
             user = UserService.register_by_phone(
                 phone=body.phone, verify_code=body.verify_code, password=body.password,
+                real_name=body.real_name, role="user",
+            )
+        elif has_email:
+            user = UserService.register_by_email(
+                email=body.email, verify_code=body.email_code, password=body.password,
                 real_name=body.real_name, role="user",
             )
         else:
@@ -57,11 +74,12 @@ async def register(body: RegisterReq):
 
 
 @router.post("/login", summary="密码登录",
-             description="双通道：username+password 或 phone+password。返回访问令牌与刷新令牌（双令牌）。")
+             description="三通道：username+password / phone+password / email+password。"
+                         "同时填写时优先级 username > phone > email。返回双令牌。")
 async def login(body: LoginReq):
     try:
         result = UserService.login(username=body.username or "", password=body.password,
-                                   phone=body.phone or "")
+                                   phone=body.phone or "", email=body.email or "")
         return success(data=result)
     except BizError:
         raise
@@ -109,6 +127,15 @@ async def guest_token():
              description="向手机号发送 6 位验证码（5 分钟有效，60s 限频）。短信网关未配置时返回明确错误，不伪造发送成功。")
 async def sms_send(body: SmsSendReq):
     data = sms_service.send_code(body.phone)
+    return success(message="验证码已发送", data=data)
+
+
+@router.post("/email/send", summary="发送邮箱验证码",
+             description="向邮箱发送 6 位验证码（5 分钟有效，60s 限频）。"
+                         "SMTP 未配置时返回明确错误，不伪造发送成功；"
+                         "仅开发环境显式开启 MAIL_DEMO_MODE 时才返回演示码。")
+async def email_send(body: EmailSendReq):
+    data = email_code_service.send_code(body.email)
     return success(message="验证码已发送", data=data)
 
 

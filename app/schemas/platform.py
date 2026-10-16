@@ -14,7 +14,7 @@ from app.core import rules
 # A. 认证
 # --------------------------------------------------------------------------- #
 class RegisterReq(BaseModel):
-    username: Optional[str] = Field(None, description="登录账号（手机号注册时可留空，由后端自动生成）",
+    username: Optional[str] = Field(None, description="登录账号（手机号/邮箱注册时可留空，由后端自动生成）",
                                     examples=["alice"])
     password: str = Field(..., min_length=rules.PASSWORD_MIN_LEN,
                           max_length=rules.PASSWORD_MAX_LEN,
@@ -23,6 +23,9 @@ class RegisterReq(BaseModel):
     real_name: str = Field("", description="姓名")
     phone: Optional[str] = Field(None, description="手机号（密文存储；手机号注册必填）")
     verify_code: Optional[str] = Field(None, description="短信验证码（手机号注册必填，与 phone 成对）")
+    email: Optional[str] = Field(None, description="邮箱（密文存储；邮箱注册必填）",
+                                 examples=["alice@example.com"])
+    email_code: Optional[str] = Field(None, description="邮箱验证码（邮箱注册必填，与 email 成对）")
     role: Literal["user"] = Field(
         "user", description="公开注册固定为普通用户；专业角色由后台审核授予"
     )
@@ -38,12 +41,27 @@ class RegisterReq(BaseModel):
             raise ValueError(r.message)
         return r.value
 
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v):
+        """FR-U-01：填了邮箱就必须格式合法，并统一归一化为小写去空格。"""
+        if v is None or str(v).strip() == "":
+            return None
+        r = rules.check_email(v)
+        if not r.ok:
+            raise ValueError(r.message)
+        return r.value
+
 
 
 class LoginReq(BaseModel):
-    """登录请求：双通道 —— 账号登录传 username，手机号登录传 phone（二选一，都传以 username 为准）。"""
-    username: Optional[str] = Field(None, description="登录账号（与 phone 二选一）", examples=["demo"])
-    phone: Optional[str] = Field(None, description="手机号（与 username 二选一）")
+    """登录请求：三通道 —— 账号 username / 手机号 phone / 邮箱 email。
+
+    三者可只填一个；同时填写时后端按 username > phone > email 取优先级。
+    """
+    username: Optional[str] = Field(None, description="登录账号（与 phone/email 三选一）", examples=["demo"])
+    phone: Optional[str] = Field(None, description="手机号（与 username/email 三选一）")
+    email: Optional[str] = Field(None, description="邮箱（与 username/phone 三选一）")
     password: str = Field(..., description="密码", examples=["123456"])
 
     @field_validator("phone")
@@ -56,6 +74,16 @@ class LoginReq(BaseModel):
             raise ValueError(r.message)
         return r.value
 
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v):
+        if v is None or str(v).strip() == "":
+            return None
+        r = rules.check_email(v)
+        if not r.ok:
+            raise ValueError(r.message)
+        return r.value
+
 
 class RefreshReq(BaseModel):
     refresh_token: str = Field(..., description="刷新令牌")
@@ -63,6 +91,18 @@ class RefreshReq(BaseModel):
 
 class SmsSendReq(BaseModel):
     phone: str = Field(..., description="手机号")
+
+
+class EmailSendReq(BaseModel):
+    email: str = Field(..., description="邮箱", examples=["alice@example.com"])
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v):
+        r = rules.check_email(v)
+        if not r.ok:
+            raise ValueError(r.message)
+        return r.value
 
 
 class TokenResp(BaseModel):
@@ -297,6 +337,16 @@ class ConsultCreateReq(BaseModel):
 class SendMsgReq(BaseModel):
     content: str = Field(..., description="消息内容（一期仅文本）")
     type: str = Field("text", description="消息类型；一期仅支持 text，其他值返回 90001（用例 IT-CS-08）")
+    ai_assisted: bool = Field(
+        False,
+        description="本条是否在 AI 辅助建议基础上定稿（营养师故事 4）。"
+                    "只标记来源，不代表未经人工确认——置 true 表示营养师在草稿上（可能已修改）主动发送。")
+
+
+class AiSuggestReq(BaseModel):
+    """AI 咨询辅助建议请求（营养师故事 4）。"""
+    hint: str = Field("", max_length=200,
+                      description="营养师补充要点，如“客户在执行度上纠结，重点说清可操作性”（可留空）")
 
 
 class CloseConsultReq(BaseModel):

@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     Computed,
     DateTime,
@@ -340,6 +341,8 @@ class ConsultationMessage(Base):
         nullable=False, default="text", comment="内容类型",
     )
     content = Column(Text, comment="内容")
+    ai_assisted = Column(Boolean, nullable=False, default=False,
+                         comment="本条是否经 AI 辅助生成（营养师审核后发送，迁移 007）")
     attachment_url = Column(String(500), comment="图片地址（二期）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 

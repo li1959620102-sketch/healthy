@@ -251,6 +251,29 @@ class ChatQueryService:
         return "unavailable" if self._init_attempted else "cold"
 
     # ------------------------------------------------------------------ #
+    async def complete(self, system_text: str, user_text: str) -> Optional[str]:
+        """一次性生成（非流式）：给"需要拿到完整文本再加工"的调用方用。
+
+        目前唯一调用方是营养师的「AI 咨询辅助建议」——它要的是**一段可编辑的草稿**，
+        而不是逐字上屏的流式输出。
+
+        返回 `None` 表示**不可用**（组件未就绪 / 模型调用失败）。
+        刻意不返回空串：调用方必须据此走如实降级（"模型暂不可用"），
+        否则营养师会看到一段空白，还以为模型就是这么写的。
+        """
+        if not await asyncio.to_thread(self._ensure_components) or self._llm is None:
+            return None
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage
+            resp = await self._llm.ainvoke([SystemMessage(content=system_text),
+                                            HumanMessage(content=user_text)])
+            text = resp.content if hasattr(resp, "content") else str(resp)
+            text = (text or "").strip()
+            return text or None
+        except Exception as e:                            # noqa: BLE001
+            logger.error("一次性生成失败：%s", e)
+            return None
+
     def retrieve(self, question: str, top_k: int = 4) -> List[Dict]:
         """相似检索 + 阈值过滤，返回 [{doc_id, title, file_name, fragment, source, score}]。
 

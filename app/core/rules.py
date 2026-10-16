@@ -26,6 +26,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 # 常量（规则的唯一出处）
 # --------------------------------------------------------------------------- #
 PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")   # 11 位，1 开头，第二位 3-9
+# 邮箱（FR-U-01）：本地部分允许常见字符，域名至少一个点且顶级域≥2 位字母。
+# 不追 RFC 5322 全量文法——过度宽松的正则会把明显非法的值放进来，
+# 真正的可用性由"发一封验证码邮件、用户收得到"来证明。
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$")
+EMAIL_MAX_LEN = 254                            # RFC 5321 对邮件地址长度的上限
 PASSWORD_MIN_LEN, PASSWORD_MAX_LEN = 8, 64
 HEIGHT_MIN_CM, HEIGHT_MAX_CM = 50, 250
 WEIGHT_MIN_KG, WEIGHT_MAX_KG = 2.0, 300.0
@@ -54,6 +59,17 @@ CHAT_ANSWER_CACHE_MAX = 200          # 缓存条目上限（有界，防内存�
 # 知识库向量化写入的业务场景标记（落 Milvus business_scene 字段，用于按场景筛片段）
 # 原为硬编码 "NRS2002"（旧项目名），会让新写入的片段带着上一代项目名进检索结果。
 KB_BUSINESS_SCENE = "food_health_kb"
+
+# AI 咨询辅助建议（营养师故事 4：「使用 AI 生成咨询辅助建议并人工修改」）
+# AI 产出的是**草稿**，由营养师修改后主动发送；条数与字数上限用于控制上下文与生成成本。
+SUGGEST_CONTEXT_MESSAGES = 10   # 组装给模型的最近对话条数（用户 + 营养师 + 系统提示）
+SUGGEST_MAX_CHARS = 300         # 建议草稿字数上限（提示模型遵守，超长不截断、不判错）
+
+# 运营活跃口径（需求 FR-V-08：管理员查看 DAU / MAU）
+# 定义为「窗口内有过登录 或 提交测评 或 发起咨询 或 发起对话」的**去重用户**。
+# 只看 sys_user.last_login_at 会系统性低估：用户登录后长时间保持登录态继续使用，
+# 期间不会再产生登录记录，于是"天天在用"的人在指标上等于"没来过"。
+ACTIVE_MAU_DAYS = 30            # MAU 统计窗口（天）
 
 # --------------------------------------------------------------------------- #
 # 运营预警阈值（需求 FR-V-10 / 数据字典 system_config）
@@ -176,6 +192,32 @@ def check_phone(phone: Optional[str]) -> CheckResult:
     if not PHONE_PATTERN.match(value):
         return _err("手机号格式不正确（需 1 开头，第二位 3-9）")
     return _ok(value)
+
+
+# --------------------------------------------------------------------------- #
+# FR-U-01 邮箱
+# --------------------------------------------------------------------------- #
+def check_email(email: Optional[str]) -> CheckResult:
+    """邮箱：格式合法且长度 ≤254 通过；大小写与首尾空格统一归一为小写去空格。
+
+    归一化很关键：`Alice@Example.com` 与 `alice@example.com` 是同一个邮箱，
+    若不做归一，用户换一种大小写就能绕过「已注册」判断，注册出多个账号。
+    """
+    if email is None or str(email).strip() == "":
+        return _err("邮箱不能为空")
+    value = str(email).strip().lower()
+    if len(value) > EMAIL_MAX_LEN:
+        return _err(f"邮箱长度不能超过 {EMAIL_MAX_LEN} 位")
+    if "@" not in value:
+        return _err("邮箱格式不正确")
+    if not EMAIL_PATTERN.match(value):
+        return _err("邮箱格式不正确（示例：name@example.com）")
+    return _ok(value)
+
+
+def normalize_email(email: Optional[str]) -> str:
+    """邮箱归一化（小写去空格）；不做合法性校验，供已有合法值二次处理使用。"""
+    return str(email or "").strip().lower()
 
 
 # --------------------------------------------------------------------------- #

@@ -288,7 +288,7 @@ function closeLogin() {
 
 /* ---------------- 登录页：身份选择（普通用户 / 营养师 / 管理员） ----------------
  * 选择的角色用于：①注册时作为账号角色；②登录后按服务端返回的真实角色路由落地屏。 */
-const LOGIN_UI = { tab: 'phone', role: 'user', timer: null };
+const LOGIN_UI = { tab: 'phone', role: 'user', timer: null, emailTimer: null };
 
 function switchLoginRole(role) {
   LOGIN_UI.role = role;
@@ -314,9 +314,11 @@ function afterLogin(data) {
 function switchLoginTab(t) {
   LOGIN_UI.tab = t;
   document.getElementById('panePhone').style.display = (t === 'phone') ? '' : 'none';
+  document.getElementById('paneEmail').style.display = (t === 'email') ? '' : 'none';
   document.getElementById('paneAccount').style.display = (t === 'account') ? '' : 'none';
   /* 通道分段控件（参考页风格）：仅切换 active 类，不改 btn 外观 */
   document.getElementById('tabPhone').classList.toggle('active', t === 'phone');
+  document.getElementById('tabEmail').classList.toggle('active', t === 'email');
   document.getElementById('tabAccount').classList.toggle('active', t === 'account');
   document.getElementById('loginErr').textContent = '';
 }
@@ -344,9 +346,9 @@ function rememberMe(el) {
 }
 function saveRememberedAccount() {
   try {
-    const acc = LOGIN_UI.tab === 'phone'
-      ? (document.getElementById('lgPhone').value || '')
-      : (document.getElementById('lgUser').value || '');
+    const idByTab = { phone: 'lgPhone', email: 'egEmail', account: 'lgUser' };
+    const el = document.getElementById(idByTab[LOGIN_UI.tab] || 'lgUser');
+    const acc = (el && el.value) || '';
     localStorage.setItem('ai_health_account', acc);
   } catch (e) { }
 }
@@ -357,10 +359,13 @@ function restoreRemembered() {
     if (cb) cb.checked = true;
     const acc = localStorage.getItem('ai_health_account') || '';
     if (!acc) return;
-    const target = /^1\d{10}$/.test(acc) ? 'lgPhone' : 'lgUser';
+    /* 按内容判断该填回哪个通道：11 位数字→手机号，含 @→邮箱，其余→账号 */
+    let target = 'lgUser', tab = 'account';
+    if (/^1\d{10}$/.test(acc)) { target = 'lgPhone'; tab = 'phone'; }
+    else if (acc.indexOf('@') > 0) { target = 'egEmail'; tab = 'email'; }
     const el = document.getElementById(target);
     if (el) el.value = acc;
-    if (target === 'lgUser') switchLoginTab('account');
+    if (tab !== 'phone') switchLoginTab(tab);
   } catch (e) { }
 }
 
@@ -381,6 +386,39 @@ function initLoginLeaves() {
     el.style.setProperty('--rot', (120 + Math.random() * 260).toFixed(0) + 'deg');
     box.appendChild(el);
   });
+}
+
+async function sendEmailCode() {
+  const email = (document.getElementById('egEmail').value || '').trim();
+  const err = document.getElementById('loginErr');
+  err.textContent = '';
+  if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)) { err.textContent = '请输入正确的邮箱，如 name@example.com'; return; }
+  const btn = document.getElementById('btnSendEmailCode');
+  btn.disabled = true; btn.textContent = '发送中…';
+  try {
+    const d = await API.auth.sendEmail(email);
+    if (d && d.demo_mode) {
+      /* 演示模式（SMTP 未配置）：验证码直接展示并自动填入，明示非真实邮件 */
+      toast('【演示模式·未接邮件网关】验证码 ' + d.demo_code + '，已自动填入');
+      const codeInput = document.getElementById('egCode');
+      if (codeInput) codeInput.value = d.demo_code;
+    } else {
+      toast('验证码已发送至 ' + ((d && d.to) || email) + '（' + ((d && d.expires_in) || 300) + ' 秒内有效）');
+    }
+    let left = (d && d.interval) || 60;
+    btn.textContent = left + 's 后重发';
+    if (LOGIN_UI.emailTimer) clearInterval(LOGIN_UI.emailTimer);
+    LOGIN_UI.emailTimer = setInterval(function () {
+      left -= 1;
+      if (left <= 0) {
+        clearInterval(LOGIN_UI.emailTimer); LOGIN_UI.emailTimer = null;
+        btn.disabled = false; btn.textContent = '获取验证码';
+      } else { btn.textContent = left + 's 后重发'; }
+    }, 1000);
+  } catch (e) {
+    err.textContent = e.message || '验证码发送失败';
+    btn.disabled = false; btn.textContent = '获取验证码';
+  }
 }
 
 async function sendSmsCode() {
@@ -430,6 +468,17 @@ async function doLogin() {
       err.textContent = '';
       afterLogin(data);
     } catch (e) { err.textContent = e.message || '登录失败'; }
+  } else if (LOGIN_UI.tab === 'email') {
+    const email = (document.getElementById('egEmail').value || '').trim();
+    const pwd = document.getElementById('egPwd').value || '';
+    if (!email || !pwd) { err.textContent = '请输入邮箱和密码'; return; }
+    err.textContent = '登录中…';
+    try {
+      saveRememberedAccount();
+      const data = await API.auth.login(null, pwd, null, email);
+      err.textContent = '';
+      afterLogin(data);
+    } catch (e) { err.textContent = e.message || '登录失败'; }
   } else {
     const username = (document.getElementById('lgUser').value || '').trim();
     const password = document.getElementById('lgPwdA').value || '';
@@ -465,6 +514,27 @@ async function doRegister() {
       err.textContent = '';
       toast('注册成功，正在登录…');
       await doLogin();   // 注册成功后用手机号+密码自动登录
+    } catch (e) { err.textContent = e.message || '注册失败'; }
+    return;
+  }
+  if (LOGIN_UI.tab === 'email') {
+    const email = (document.getElementById('egEmail').value || '').trim();
+    const code = (document.getElementById('egCode').value || '').trim();
+    const password = document.getElementById('egPwd').value || '';
+    const realName = (document.getElementById('egName').value || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)) { err.textContent = '请输入正确的邮箱，如 name@example.com'; return; }
+    if (!/^\d{6}$/.test(code)) { err.textContent = '请输入 6 位邮箱验证码'; return; }
+    if (password.length < 8) { err.textContent = '密码至少 8 位（后端规则：8–64 位）'; return; }
+    err.textContent = '注册中…';
+    try {
+      await API.auth.register({
+        email: email, email_code: code, password: password,
+        real_name: realName || email.split('@')[0],
+        role: LOGIN_UI.role || 'user'
+      });
+      err.textContent = '';
+      toast('注册成功，正在登录…');
+      await doLogin();   // 注册成功后用邮箱+密码自动登录
     } catch (e) { err.textContent = e.message || '注册失败'; }
     return;
   }
@@ -1254,6 +1324,130 @@ async function loadDietitian() {
   loadLicense();
   loadMyTemplates();
   loadClients(DT.level);
+  loadConsultBoard();
+}
+
+/* ---------------- 咨询接待（营养师工作台 · 故事 4） ----------------
+ * 流程：待接入队列接入 → 打开会话 → 点「AI 辅助建议」生成**草稿** → 人工修改 → 发送。
+ * AI 只填输入框，绝不自动发送；发送时按 state 标记 ai_assisted（来源可回溯）。
+ */
+async function loadConsultBoard() {
+  await Promise.all([loadPendingConsults(), loadMyConsults()]);
+}
+
+async function loadPendingConsults() {
+  const box = document.getElementById('dtPendingList');
+  if (!box) return;
+  try {
+    const d = await API.consultations.pending();
+    const items = (d && d.items) || [];
+    box.innerHTML = items.length
+      ? items.map(function (c) {
+        return '<div class="dt-pick"><span>#' + c.consultation_id + '　' +
+          esc(c.created_at || '') + '</span>' +
+          '<button class="btn" onclick="acceptConsult(' + c.consultation_id + ')">接入</button></div>';
+      }).join('')
+      : '<div class="desc">当前没有待接入的咨询</div>';
+  } catch (e) {
+    box.innerHTML = '<div class="desc">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+
+async function loadMyConsults() {
+  const box = document.getElementById('dtConsultList');
+  if (!box) return;
+  try {
+    const d = await API.consultations.list({ limit: 20 });
+    const items = (d && d.items) || [];
+    box.innerHTML = items.length
+      ? items.map(function (c) {
+        const active = (DT.consultId === c.consultation_id) ? ' active' : '';
+        const st = { pending: '待接入', active: '进行中', closed: '已结束', timeout: '超时' }[c.status] || c.status;
+        return '<div class="dt-pick' + active + '"><span>#' + c.consultation_id +
+          '　<span class="badge">' + esc(st) + '</span></span>' +
+          '<button class="btn" onclick="openConsult(' + c.consultation_id + ')">打开</button></div>';
+      }).join('')
+      : '<div class="desc">暂无分配给自己的咨询</div>';
+  } catch (e) {
+    box.innerHTML = '<div class="desc">加载失败：' + esc(e.message || '') + '</div>';
+  }
+}
+
+async function acceptConsult(id) {
+  try {
+    await API.consultations.accept(id);
+    toast('已接入咨询 #' + id);
+    await loadConsultBoard();
+    await openConsult(id);
+  } catch (e) { toast('接入失败：' + e.message); }
+}
+
+async function openConsult(id) {
+  DT.consultId = id;
+  DT.aiAssisted = false;
+  setText('dtConsultWhich', '咨询 #' + id);
+  setText('dtAiNote', '');
+  setText('dtAiRefs', '');
+  const box = document.getElementById('dtConsultMsgs');
+  try {
+    const d = await API.consultations.messages(id);
+    const items = (d && d.items) || [];
+    box.innerHTML = items.length
+      ? items.map(renderConsultMsg).join('')
+      : '<div class="desc">暂无消息</div>';
+    box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    box.innerHTML = '<div class="desc">加载失败：' + esc(e.message || '') + '</div>';
+  }
+  await loadMyConsults();
+}
+
+function renderConsultMsg(m) {
+  const who = { user: '客户', dietitian: '营养师', system: '系统' }[m.sender_type] || m.sender_type;
+  const cls = m.sender_type === 'dietitian' ? 'me' : (m.sender_type === 'system' ? 'sys' : 'user');
+  const tag = m.ai_assisted ? ' <span class="badge">AI 辅助</span>' : '';
+  return '<div class="dt-msg ' + cls + '"><span class="who">' + who + tag + '</span>' +
+    '<span class="body">' + esc(m.content) + '</span></div>';
+}
+
+async function genAiSuggestion() {
+  if (!DT.consultId) { toast('请先从左侧选择一条咨询'); return; }
+  const note = document.getElementById('dtAiNote');
+  note.textContent = '生成中…（首次调用模型较慢）';
+  try {
+    const hint = (document.getElementById('dtConsultInput').value || '').trim();
+    const d = await API.consultations.aiSuggestion(DT.consultId, hint);
+    const box = document.getElementById('dtConsultInput');
+    box.value = d.suggestion || '';
+    /* 来源标记：只有模型/检索真出了内容才算"AI 辅助"；
+       refused 是平台标准就医话术（不是模型输出），标了会让使用率虚高 */
+    DT.aiAssisted = (d.state === 'ok' || d.state === 'basic');
+    setText('dtAiNote', d.hint || '');
+    const refs = (d.references || []).map(function (r) { return '《' + r.title + '》'; }).join('、');
+    setText('dtAiRefs', refs ? ('知识库依据：' + refs) : '');
+    if (d.refused) { toast('该诉求属高风险类别，已给出就医指引（未调用模型）'); }
+    else if (d.state === 'basic') { toast('模型暂不可用，已退回知识库片段，请自行整理'); }
+    else { toast('草稿已生成，请修改确认后发送'); }
+  } catch (e) {
+    note.textContent = '';
+    toast('生成失败：' + e.message);
+  }
+}
+
+async function sendConsultMsg() {
+  if (!DT.consultId) { toast('请先从左侧选择一条咨询'); return; }
+  const el = document.getElementById('dtConsultInput');
+  const content = (el.value || '').trim();
+  if (!content) { toast('请输入回复内容'); return; }
+  try {
+    await API.consultations.send(DT.consultId, content, DT.aiAssisted);
+    el.value = '';
+    DT.aiAssisted = false;
+    setText('dtAiNote', '');
+    setText('dtAiRefs', '');
+    toast('已发送');
+    await openConsult(DT.consultId);
+  } catch (e) { toast('发送失败：' + e.message); }
 }
 
 async function exportCustomers(fmt) {
@@ -1305,7 +1499,8 @@ async function loadClients() {
 
 
 /* ================= 营养师专业端（批次2：资质 / 客户 / 模板） ================= */
-const DT = { level: '', me: null, invite: '', templates: [], editingId: null, customer: null };
+const DT = { level: '', me: null, invite: '', templates: [], editingId: null, customer: null,
+             consultId: null, aiAssisted: false };
 const AUDIT_TEXT = { pending: '待审核', approved: '已通过', rejected: '已驳回', none: '未提交' };
 const AUDIT_CLASS = { pending: 'orange', approved: 'green', rejected: 'red' };
 /* 后端 template_status 真实取值：draft / pending / published / offline（驳回会退回 draft 并带 audit_remark） */
@@ -2477,6 +2672,15 @@ async function loadOps() {
     setText('opsAvg', d.avg_score == null ? '—' : String(d.avg_score));
     setText('opsChat', d.chat_messages == null ? '—' : String(d.chat_messages));
     setText('opsDocs', d.knowledge_docs == null ? '—' : String(d.knowledge_docs));
+    // 活跃与使用率（故事 4）
+    setText('opsDau', d.dau == null ? '—' : String(d.dau));
+    setText('opsMau', d.mau == null ? '—' : String(d.mau));
+    setText('opsDauMeta', d.active_note || '—');
+    setText('opsMauMeta', d.active_note || '—');
+    setText('opsMonth', d.month_assessment == null ? '—' : String(d.month_assessment));
+    setText('opsAiRatio', d.ai_ratio == null ? '—' : (d.ai_ratio * 100).toFixed(1) + '%');
+    setText('opsAiRatioMeta', d.ai_ratio_note || '—');
+    renderOpsTemplates(d.template_usage);
     // 趋势
     const chart = document.getElementById('opsTrend');
     const trend = d.assessment_trend_7d || [];
@@ -2502,16 +2706,46 @@ async function loadOps() {
     if (note) note.textContent = '数据生成时间：' + (d.generated_at || '—') + (d.note ? ' · ' + d.note : '');
   } catch (e) {
     ids.forEach(i => setText(i, '—'));
-    ['opsNewUsers', 'opsAssessDone', 'opsAvg', 'opsDocs', 'opsTrendMeta'].forEach(i => setText(i, '—'));
+    ['opsNewUsers', 'opsAssessDone', 'opsAvg', 'opsDocs', 'opsTrendMeta',
+      'opsDau', 'opsMau', 'opsMonth', 'opsAiRatio', 'opsAiRatioMeta'].forEach(i => setText(i, '—'));
     const chart = document.getElementById('opsTrend');
     if (chart) chart.innerHTML = '<div class="desc">无数据</div>';
     const lv = document.getElementById('opsLevels');
     if (lv) lv.innerHTML = '<span class="desc">—</span>';
+    const tp = document.getElementById('opsTemplates');
+    if (tp) tp.innerHTML = '<span class="desc">—</span>';
     if (note) {
       note.textContent = e.code === 10005
         ? '当前账号不是管理员，运营大屏数据不可见。此处不显示任何编造数据 —— 如需查看请用管理员账号登录。'
         : ('加载失败：' + e.message);
     }
+  }
+}
+
+/** 模板使用率：逐模板条状占比 + 汇总口径。无数据一律显示 —，不补零。 */
+function renderOpsTemplates(usage) {
+  const box = document.getElementById('opsTemplates');
+  const meta = document.getElementById('opsTemplatesMeta');
+  if (!box) return;
+  if (!usage || !Array.isArray(usage.items) || !usage.items.length) {
+    box.innerHTML = '<span class="desc">暂无模板数据</span>';
+    if (meta) setText('opsTemplatesMeta', '—');
+    return;
+  }
+  const total = Number(usage.total_records) || 0;
+  box.innerHTML = usage.items.map(function (it) {
+    const pct = total ? (Number(it.records) || 0) * 100 / total : 0;
+    const st = it.status === 'published' ? '' : '（' + esc(it.status || '未发布') + '）';
+    return '<div class="metric"><div class="metric-head"><span>' +
+      esc(it.name || it.code || ('#' + it.template_id)) + st + '</span><span>' +
+      (Number(it.records) || 0).toLocaleString() + '（' + pct.toFixed(1) + '%）</span></div>' +
+      '<div class="bar"><span style="width:' + pct.toFixed(1) + '%"></span></div></div>';
+  }).join('');
+  if (meta) {
+    setText('opsTemplatesMeta', '共 ' + (usage.template_count || 0) + ' 个模板，' +
+      '已使用 ' + (usage.used_template_count || 0) + ' 个，' +
+      '已发布 ' + (usage.published_template_count || 0) + ' 个，' +
+      '累计发起 ' + total.toLocaleString() + ' 次测评（占比按有模板归属的记录计算）');
   }
 }
 function init() {

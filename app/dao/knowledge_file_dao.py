@@ -215,63 +215,6 @@ class KnowledgeFileDAO:
         # 字符串类：目标集合缺这个字段时留空，不报错、不猜值
         return str(raw) if raw is not None else ""
 
-    def query_by_category(self, collection_name: str, category: Optional[str] = None,
-                          file_name: Optional[str] = None) -> List[Dict[str, Any]]:
-        """通过标量检索查询记录"""
-        self._ensure_connection()
-        if not utility.has_collection(collection_name):
-            return []
-
-        collection = Collection(collection_name)
-        expr_parts = []
-        if category:
-            expr_parts.append(f'category == "{category}"')
-        if file_name:
-            expr_parts.append(f'file_name == "{file_name}"')
-        expr = " and ".join(expr_parts) if expr_parts else "id != ''"
-
-        results = collection.query(
-            expr=expr,
-            output_fields=["pk", "file_id", "file_name", "chunk_text", "chunk_id", "created_at"]
-        )
-        return results
-
-    def semantic_search(self, collection_name: str, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
-        """语义检索"""
-        self._ensure_connection()
-        if not utility.has_collection(collection_name):
-            return []
-
-        collection = Collection(collection_name)
-        collection.load()
-
-        search_params = {
-            "metric_type": "COSINE",
-            "params": {"nprobe": 10}
-        }
-
-        results = collection.search(
-            data=[query_vector],
-            anns_field="vector",
-            param=search_params,
-            limit=top_k,
-            output_fields=["pk", "file_id", "file_name", "chunk_text", "chunk_id", "created_at"]
-        )
-
-        formatted_results = []
-        for hits in results:
-            for hit in hits:
-                formatted_results.append({
-                    "pk": hit.id,
-                    "score": hit.distance,
-                    "file_id": hit.entity.get("file_id", ""),
-                    "file_name": hit.entity.get("file_name", ""),
-                    "chunk_text": hit.entity.get("chunk_text", ""),
-                    "chunk_id": hit.entity.get("chunk_id", ""),
-                    "created_at": hit.entity.get("created_at", "")
-                })
-        return formatted_results
-
     def delete_by_file(self, collection_name: str, file_name: str,
                        file_id: Optional[str] = None) -> int:
         """删除某文档在向量库中的**全部**分块，返回删除前命中的分块数。
@@ -309,25 +252,3 @@ class KnowledgeFileDAO:
             collection.delete(expr)
             collection.flush()
         return n
-
-    def count_by_category(self, collection_name: str, category: Optional[str] = None,
-                          file_name: Optional[str] = None) -> int:
-        """统计符合条件的记录数量"""
-        self._ensure_connection()
-
-        if not utility.has_collection(collection_name):
-            return 0
-
-        collection = Collection(collection_name)
-        expr_parts = []
-        if category:
-            expr_parts.append(f'category == "{category}"')
-        if file_name:
-            expr_parts.append(f'file_name == "{file_name}"')
-        expr = " and ".join(expr_parts) if expr_parts else "id != ''"
-
-        result = collection.query(
-            expr=expr,
-            output_fields=["count(*)"]
-        )
-        return result[0]["count(*)"]

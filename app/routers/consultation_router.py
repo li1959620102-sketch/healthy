@@ -8,10 +8,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.deps import get_current_user, require_role, ROLE_ADMIN, ROLE_DIETITIAN
+from app.core.deps import (
+    get_current_user, require_role, require_approved_dietitian, ROLE_ADMIN, ROLE_DIETITIAN,
+)
 from app.core.responses import success
 from app.schemas.platform import (
-    AcceptConsultReq, CloseConsultReq, ConsultCreateReq, RateConsultReq, SendMsgReq,
+    AcceptConsultReq, AiSuggestReq, CloseConsultReq, ConsultCreateReq, RateConsultReq, SendMsgReq,
 )
 from app.services.consultation_service import consultation_service
 
@@ -48,7 +50,20 @@ async def messages(consultation_id: int, limit: int = Query(200, ge=1, le=1000),
 
 @router.post("/{consultation_id}/messages", summary="发送消息", description="一期仅文本：type=image 等非文本类型返回 90001；已结束的咨询不可发送。")
 async def send(consultation_id: int, body: SendMsgReq, user: dict = Depends(get_current_user)):
-    return success(data=consultation_service.send(user, consultation_id, body.content, body.type))
+    return success(data=consultation_service.send(user, consultation_id, body.content,
+                                                  body.type, body.ai_assisted))
+
+
+@router.post("/{consultation_id}/ai-suggestion", summary="生成 AI 咨询辅助建议",
+             description="营养师工作台用（故事 4）：依据客户健康档案 + 本次咨询对话 + 知识库检索，"
+                         "生成**建议草稿**，供营养师修改后经「发送消息」发出。"
+                         "草稿不落消息表、不会自动发给客户。"
+                         "客户诉求命中用药/诊断/报告解读等高风险类别时直接返回就医指引，不调用模型；"
+                         "模型不可用时返回 state=basic 与检索片段，不编造内容。")
+async def ai_suggestion(consultation_id: int, body: AiSuggestReq = None,
+                        user: dict = Depends(require_approved_dietitian())):
+    hint = (body.hint if body and body.hint else "")
+    return success(data=await consultation_service.ai_suggestion(user, consultation_id, hint))
 
 
 @router.post("/{consultation_id}/close", summary="结束咨询", description="结束后若已有营养师，自动建立绑定关系。")

@@ -38,16 +38,24 @@ class RedisClient:
     # 连接
     # ------------------------------------------------------------------ #
     def _build(self):
-        """按 REDIS_URL 优先、host/port/db 兜底建立客户端。"""
+        """按 REDIS_URL 优先、host/port/db 兜底建立客户端。
+
+        `max_connections` 显式接上 `REDIS_MAX_CONNECTIONS`：该键一直写在 `.env` 里，
+        此前建连时并未读取 —— 配置写了却没人用，等于池上限由驱动默认值（实际不设限）决定，
+        `.env` 里的数字是一句空话。
+        """
         import redis  # 延迟导入：redis 包缺失也不影响服务启动
 
         timeout = float(getattr(settings, "REDIS_SOCKET_CONNECT_TIMEOUT", 5) or 5)
+        read_timeout = float(getattr(settings, "REDIS_SOCKET_TIMEOUT", 30) or 30)
+        max_conn = int(getattr(settings, "REDIS_MAX_CONNECTIONS", 0) or 0) or None
         url = (getattr(settings, "REDIS_URL", None) or "").strip().strip('"').strip("'")
         if url:
             return redis.Redis.from_url(
                 url,
                 socket_connect_timeout=timeout,
-                socket_timeout=float(getattr(settings, "REDIS_SOCKET_TIMEOUT", 30) or 30),
+                socket_timeout=read_timeout,
+                max_connections=max_conn,
                 decode_responses=True,
             )
         return redis.Redis(
@@ -55,7 +63,8 @@ class RedisClient:
             port=int(getattr(settings, "REDIS_PORT", 6379) or 6379),
             db=int(getattr(settings, "REDIS_DB", 0) or 0),
             socket_connect_timeout=timeout,
-            socket_timeout=float(getattr(settings, "REDIS_SOCKET_TIMEOUT", 30) or 30),
+            socket_timeout=read_timeout,
+            max_connections=max_conn,
             decode_responses=True,
         )
 
