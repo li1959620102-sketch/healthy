@@ -54,6 +54,15 @@ class ApiHelper:
         digits = ("".join(ch for ch in self.run_id if ch.isdigit())[-5:]).rjust(5, "0")
         return f"138{digits}{next(_GLOBAL_SEQ) % 1000:03d}"
 
+    def email(self) -> str:
+        """生成合法且互不相同的邮箱。
+
+        域名用 RFC 2606 保留的 `.invalid`：它**永不解析、永不投递**，
+        即便某次误配了真实 SMTP 也不会把验证码邮件发给陌生人。
+        统一小写——`check_email` 会归一化，用例内直接用小写串比较好断言。
+        """
+        return f"{self.uniq('m')}@example.invalid".lower()
+
     # ------------------------------------------------------------------ #
     # 账号
     # ------------------------------------------------------------------ #
@@ -171,6 +180,53 @@ class ApiHelper:
         raw = redis_client.get(f"sms:code:{phone_hmac(phone)}")
         assert raw, f"Redis 中没有 {phone} 的有效验证码（是否已过期？）"
         return str(raw)
+
+    # ------------------------------------------------------------------ #
+    # 邮箱验证码（FR-U-01）
+    # ------------------------------------------------------------------ #
+    def email_code(self, email: str) -> str:
+        """发送邮箱验证码并返回演示码（开发态 MAIL_DEMO_MODE=true 时响应带 demo_code）。"""
+        r = self.c.post(f"{API}/auth/email/send", json={"email": email}).json()
+        assert r.get("code") == 0, r
+        code = (r.get("data") or {}).get("demo_code")
+        assert code, f"演示模式应回传 demo_code：{r}"
+        return code
+
+    def peek_email_code(self, email: str) -> str:
+        """取 Redis 里当前有效的邮箱验证码（不触发新发送，避开 60s 限频）。"""
+        from app.utils.redis_client import redis_client
+        from app.utils.security import email_hash
+        raw = redis_client.get(f"email:code:{email_hash(email)}")
+        assert raw, f"Redis 中没有 {email} 的有效验证码（是否已过期？）"
+        return str(raw)
+
+    def register_by_email(self, email: Optional[str] = None, code: Optional[str] = None,
+                          password: str = PASSWORD, real_name: str = "") -> Dict[str, Any]:
+        """邮箱通道注册；未给验证码时自动取演示码。"""
+        email = email or self.email()
+        if code is None:
+            code = self.email_code(email)
+        r = self.c.post(f"{API}/auth/register", json={
+            "email": email, "email_code": code, "password": password, "real_name": real_name,
+        }).json()
+        if r.get("code") == 0:
+            uname = r["data"]["username"]
+            uid = r["data"]["user_id"]
+            self.cleanup.append(lambda s, u=uname: self._clean_user(s, u))
+            self.cleanup.append(lambda s, i=uid: self._clean_profile(s, i))
+        return r
+
+    def login_email(self, email: str, password: str = PASSWORD) -> Dict[str, Any]:
+        return self.c.post(f"{API}/auth/login",
+                           json={"email": email, "password": password}).json()
+
+    @staticmethod
+    def clear_email_code(email: str) -> None:
+        """清掉某邮箱的验证码/限频键（用例结束兜底，避免 60s 限频影响后续）。"""
+        from app.utils.redis_client import redis_client
+        from app.utils.security import email_hash
+        h = email_hash(email)
+        redis_client.delete(f"email:code:{h}", f"email:try:{h}", f"email:limit:{h}")
 
     # ------------------------------------------------------------------ #
     # 模板
