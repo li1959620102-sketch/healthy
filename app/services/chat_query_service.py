@@ -12,6 +12,7 @@
 知识库：Milvus 集合 settings.MILVUS_DEFAULT_COLLECTION（ai_health_kb_v1，
 内容为 knowledge_base/*.md 药食同源常识，由 scripts/build_knowledge_base.py 构建）。
 """
+import asyncio
 import logging
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -115,10 +116,11 @@ class ChatQueryService:
                                        base_url=settings.OLLAMA_BASE_URL)
 
             # 向量集合（原生 pymilvus：COSINE 相似度，score 越大越相关）
+            # timeout：向量库不可达时快速失败，避免长重试把调用方拖住
             pymilvus.connections.connect(
                 alias=settings.MILVUS_DEFAULT_ALIAS,
                 host=settings.MILVUS_HOST, port=settings.MILVUS_PORT,
-                db_name=settings.MILVUS_DEFAULT_DB,
+                db_name=settings.MILVUS_DEFAULT_DB, timeout=5,
             )
             from pymilvus import Collection
             col = Collection(settings.MILVUS_DEFAULT_COLLECTION,
@@ -202,14 +204,16 @@ class ChatQueryService:
             return
 
         # 3) 检索（带阈值）：追问场景用"上一轮问题 + 本轮"作为检索词
-        docs = self.retrieve(retrieval_query(question, history))
+        #    检索是同步阻塞调用（嵌入 + 向量库 RPC），必须挪出事件循环——
+        #    否则向量库一慢，整个进程所有请求（含健康检查）都会被拖死。
+        docs = await asyncio.to_thread(self.retrieve, retrieval_query(question, history))
         yield {"event": "start", "data": {"message_id": None}}
         references = [{"title": d["title"], "fragment": d["fragment"]} for d in docs]
         if references:
             yield {"event": "reference", "data": {"docs": references}}
 
         # 4) 无 LLM → 降级返回检索片段
-        if not self._ensure_components() or self._llm is None:
+        if not await asyncio.to_thread(self._ensure_components) or self._llm is None:
             fallback = ("（模型服务未配置，以下为知识库检索片段）\n" + "\n".join(
                 f"- {d['title']}：{d['fragment']}" for d in docs)
                 if docs else "暂时无法检索到相关内容，请稍后再试或联系营养师。")

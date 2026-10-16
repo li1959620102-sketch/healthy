@@ -8,6 +8,7 @@
   event: start | delta | reference | done | error
 鉴权：GET 走短票；POST 走 Bearer（游客可匿名，权限受限）。
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -143,10 +144,16 @@ def _persist(session_id: Optional[int], user: Optional[dict], guest_hash: Option
 async def kb_info(_: dict = Depends(get_current_user)):
     from app.config import settings
     entities = None
-    try:
+
+    def _read_entities():
+        """同步读取向量库统计（pymilvus 是阻塞调用）。"""
         chat_query_service._ensure_components()
-        if chat_query_service._collection is not None:
-            entities = chat_query_service._collection.num_entities
+        col = chat_query_service._collection
+        return col.num_entities if col is not None else None
+
+    try:
+        # 挪到线程池执行：向量库不可达时最多拖住一个线程，不会冻结整个事件循环
+        entities = await asyncio.to_thread(_read_entities)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"读取知识库统计失败：{e}")
     return success(data={

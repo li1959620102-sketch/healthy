@@ -27,6 +27,7 @@ backups/
 downloads/
 _integration_result.json
 _junit*.xml
+_loadtest_*.json
 chroma.sqlite3
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*/
 .workbuddy/
