@@ -44,6 +44,87 @@ CLAIM_WINDOW_DAYS = 7                # BV-27 游客认领期限
 GUEST_ASSESSMENT_QUOTA = 1           # BV-21 游客测评次数上限
 GUEST_QUERY_QUOTA = 5                # BV-21 游客查询次数上限
 
+# --------------------------------------------------------------------------- #
+# 运营预警阈值（需求 FR-V-10 / 数据字典 system_config）
+# 落库键 `alert.thresholds`（JSON），管理员可在管理后台调整；短信/邮件通知待网关接入。
+# 每项：key -> {name 中文名, default 默认值, unit 单位, min/max 合法区间, desc 说明}
+# --------------------------------------------------------------------------- #
+ALERT_CONFIG_KEY = "alert.thresholds"
+
+ALERT_THRESHOLDS: Dict[str, Dict[str, Any]] = {
+    "dau_drop_pct": {
+        "name": "日活环比下降", "default": 10, "unit": "%", "min": 1, "max": 100,
+        "desc": "日活（DAU）连续 3 日环比下降超过该比例时触发预警",
+    },
+    "score_low_ratio": {
+        "name": "低分报告占比", "default": 30, "unit": "%", "min": 1, "max": 100,
+        "desc": "「待改善」等级报告占比超过该值时触发预警",
+    },
+    "consult_timeout_min": {
+        "name": "人工咨询超时", "default": CONSULTATION_TIMEOUT_MINUTES, "unit": "分钟",
+        "min": 5, "max": 240,
+        "desc": "咨询进入待接入队列后超过该时长未被接手即预警（与咨询超时口径联动）",
+    },
+    "kb_hit_rate": {
+        "name": "知识库命中率", "default": 60, "unit": "%", "min": 1, "max": 100,
+        "desc": "RAG 检索命中率低于该值时预警（需结合 chat.min_similarity 观察）",
+    },
+    "report_fail_rate": {
+        "name": "报告生成失败率", "default": 5, "unit": "%", "min": 1, "max": 100,
+        "desc": "报告生成失败占比超过该值时预警（对应错误码 50002）",
+    },
+}
+
+# --------------------------------------------------------------------------- #
+# 角色-权限矩阵（需求 §3.1 RBAC）
+# 落库键 `role.permissions`（JSON），管理后台可查看并调整。
+# operator 为项目新增的运营角色：只读运营数据，不参与用户与配置管理。
+# --------------------------------------------------------------------------- #
+ROLE_CONFIG_KEY = "role.permissions"
+
+ROLES: List[str] = ["user", "dietitian", "operator", "admin"]
+ROLE_LABELS: Dict[str, str] = {
+    "user": "普通用户", "dietitian": "营养师", "operator": "运营", "admin": "管理员",
+}
+
+ROLE_CAPABILITIES: Dict[str, str] = {
+    "profile_edit": "完善个人基础信息",
+    "assessment_run": "发起 / 续答测评，查看本人报告",
+    "template_write": "创建 / 编辑测评模板",
+    "template_audit": "模板审核发布",
+    "smart_query": "智能查询 / 智能咨询",
+    "consult_serve": "1v1 人工咨询（接待）",
+    "customer_manage": "客户管理与数据导出",
+    "system_config": "系统 / 智能体参数配置",
+    "user_manage": "用户审核、禁用解封",
+    "ops_dashboard": "平台运营数据看板",
+}
+
+ROLE_PERMISSIONS: Dict[str, Dict[str, bool]] = {
+    "profile_edit":    {"user": True,  "dietitian": True,  "operator": False, "admin": False},
+    "assessment_run":  {"user": True,  "dietitian": True,  "operator": False, "admin": True},
+    "template_write":  {"user": False, "dietitian": True,  "operator": False, "admin": True},
+    "template_audit":  {"user": False, "dietitian": False, "operator": False, "admin": True},
+    "smart_query":     {"user": True,  "dietitian": True,  "operator": True,  "admin": True},
+    "consult_serve":   {"user": False, "dietitian": True,  "operator": False, "admin": False},
+    "customer_manage": {"user": False, "dietitian": True,  "operator": False, "admin": True},
+    "system_config":   {"user": False, "dietitian": False, "operator": False, "admin": True},
+    "user_manage":     {"user": False, "dietitian": False, "operator": False, "admin": True},
+    "ops_dashboard":   {"user": False, "dietitian": False, "operator": True,  "admin": True},
+}
+
+
+def clamp_alert(key: str, value: Any) -> Any:
+    """把预警阈值收敛到合法区间；非法值回退默认。"""
+    spec = ALERT_THRESHOLDS.get(key)
+    if not spec:
+        return None
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return spec["default"]
+    return max(spec["min"], min(spec["max"], v))
+
 
 @dataclass
 class CheckResult:

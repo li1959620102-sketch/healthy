@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理后台 · AI智参平台</title>
+<script src="/assets/api.js"></script>
+<style>
+  :root{
+    --bg:#f4f6f5; --panel:#ffffff; --line:#e3e8e5; --text:#1d2b26; --muted:#6b7d76;
+    --brand:#2f7d67; --brand-soft:#e8f2ee; --warn:#b5721a; --danger:#c0392b; --ok:#2f9e6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;font-size:14px}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 22px;
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:6}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px}
+  header .spacer{flex:1}
+  header .who{color:var(--muted);font-size:12px}
+  button{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;
+    padding:6px 12px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--brand);color:var(--brand)}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.primary:hover{opacity:.9;color:#fff}
+  button.danger{color:var(--danger);border-color:#f0cbc7}
+  button.danger:hover{background:#fdecea;border-color:var(--danger);color:var(--danger)}
+  button.ok{color:var(--ok);border-color:#c9e9da}
+  button.ok:hover{background:#e9f7f0;border-color:var(--ok);color:var(--ok)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input,select{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:13px;
+    color:var(--text);background:#fff;font-family:inherit}
+  input:focus,select:focus{outline:none;border-color:var(--brand)}
+  a.link{color:var(--brand);text-decoration:none;font-size:13px}
+  a.link:hover{text-decoration:underline}
+  nav.tabs{background:var(--panel);border-bottom:1px solid var(--line);padding:0 22px;
+    display:flex;gap:2px;position:sticky;top:53px;z-index:5;overflow-x:auto}
+  nav.tabs button{border:none;background:none;border-radius:0;border-bottom:2px solid transparent;
+    padding:11px 15px;color:var(--muted);white-space:nowrap}
+  nav.tabs button:hover{color:var(--brand);border-color:transparent}
+  nav.tabs button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+  main{padding:18px 22px 40px;max-width:1360px;margin:0 auto}
+  .banner{border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;display:none}
+  .banner.err{display:block;background:#fdecea;border:1px solid #f5c6c1;color:var(--danger)}
+  .banner.info{display:block;background:var(--brand-soft);border:1px solid #cfe4dc;color:var(--brand)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:23px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
+  .card .x{color:var(--muted);font-size:11px;margin-top:4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .panel h2{font-size:14px;margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .panel h2 .tag{font-size:11px;font-weight:400;color:var(--muted);background:var(--bg);
+    border:1px solid var(--line);border-radius:20px;padding:1px 8px}
+  .panel h2 .spacer{flex:1}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .toolbar .spacer{flex:1}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfa;position:sticky;top:0}
+  td.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.wrap{white-space:normal;max-width:320px;word-break:break-all;color:var(--muted);font-size:12px}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafcfb}
+  .scroll{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .pill{display:inline-block;border-radius:20px;padding:1px 9px;font-size:12px;border:1px solid transparent}
+  .pill.ok{background:#e9f7f0;color:var(--ok);border-color:#c9e9da}
+  .pill.bad{background:#fdecea;color:var(--danger);border-color:#f5c6c1}
+  .pill.warn{background:#fdf3e3;color:var(--warn);border-color:#f0dcbb}
+  .pill.mute{background:var(--bg);color:var(--muted);border-color:var(--line)}
+  .bars{display:grid;gap:8px}
+  .bar{display:grid;grid-template-columns:72px 1fr 92px;align-items:center;gap:10px;font-size:12px}
+  .bar .track{background:var(--bg);border-radius:6px;height:10px;overflow:hidden}
+  .bar .fill{height:100%;background:linear-gradient(90deg,#7fc3ab,var(--brand));border-radius:6px;transition:width .3s}
+  .bar .val{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .thr-row{display:grid;grid-template-columns:190px 110px 1fr;gap:14px;align-items:center;
+    padding:12px 0;border-bottom:1px solid var(--line)}
+  .thr-row:last-child{border-bottom:none}
+  .thr-row .nm{font-weight:600}
+  .thr-row .nm small{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:3px}
+  .thr-row .inp{display:flex;align-items:center;gap:7px}
+  .thr-row .inp input{width:88px;text-align:right;font-variant-numeric:tabular-nums}
+  .thr-row .inp .u{color:var(--muted);font-size:12px}
+  .thr-row .ds{color:var(--muted);font-size:12px;line-height:1.5}
+  .matrix td.ctr,th.ctr{text-align:center}
+  .matrix input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--brand)}
+  .empty{color:var(--muted);text-align:center;padding:26px 0;font-size:13px}
+  .foot{color:var(--muted);font-size:12px;margin-top:8px}
+  dialog{border:1px solid var(--line);border-radius:12px;padding:0;max-width:440px;width:92%;
+    box-shadow:0 18px 50px rgba(20,40,34,.18)}
+  dialog::backdrop{background:rgba(20,40,34,.35)}
+  dialog .dlg-head{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:600}
+  dialog .dlg-body{padding:16px 18px}
+  dialog .dlg-body p{margin:0 0 10px;color:var(--muted);font-size:13px;line-height:1.6}
+  dialog textarea{width:100%;min-height:76px;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;font-family:inherit;font-size:13px;resize:vertical}
+  dialog textarea:focus{outline:none;border-color:var(--brand)}
+  dialog .dlg-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .toast{position:fixed;right:20px;bottom:20px;background:#1d2b26;color:#fff;border-radius:10px;
+    padding:11px 16px;font-size:13px;opacity:0;transform:translateY(8px);
+    transition:opacity .2s,transform .2s;pointer-events:none;z-index:50;max-width:340px}
+  .toast.show{opacity:1;transform:none}
+  .toast.bad{background:#8e2a1e}
+</style>
+</head>
+<body>
+<header>
+  <h1>AI 智参平台 · 管理后台</h1>
+  <span class="sub">用户 · 模板 · 审计 · 预警 · 权限</span>
+  <span class="spacer"></span>
+  <span class="who" id="whoami">—</span>
+  <a class="link" href="/ops.html">运维监控</a>
+  <a class="link" href="/index.html">返回工作台</a>
+  <button id="btnLogout">退出登录</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="overview" class="on">运营概览</button>
+  <button data-tab="users">用户管理</button>
+  <button data-tab="templates">模板审核</button>
+  <button data-tab="logs">审计日志</button>
+  <button data-tab="alerts">预警阈值</button>
+  <button data-tab="roles">角色配置</button>
+</nav>
+
+<main>
+  <div class="banner" id="banner"></div>
+
+  <!-- ============ 运营概览 ============ -->
+  <section id="tab-overview">
+    <div class="grid" id="ovCards"></div>
+    <div class="panel">
+      <h2>报告等级分布 <span class="tag">assessment_report.level</span>
+        <span class="spacer"></span><span class="foot" id="ovAt"></span></h2>
+      <div class="bars" id="ovLevels"></div>
+    </div>
+  </section>
+
+  <!-- ============ 用户管理 ============ -->
+  <section id="tab-users" hidden>
+    <div class="panel">
+      <h2>用户管理 <span class="tag" id="usrCount">—</span>
+        <span class="spacer"></span><button onclick="Admin.loadUsers()">刷新</button></h2>
+      <div class="toolbar">
+        <select id="fRole">
+          <option value="">全部角色</option>
+          <option value="user">普通用户</option>
+          <option value="dietitian">营养师</option>
+          <option value="operator">运营</option>
+          <option value="admin">管理员</option>
+        </select>
+        <select id="fStatus">
+          <option value="">全部状态</option>
+          <option value="active">正常</option>
+          <option value="disabled">已禁用</option>
+        </select>
+        <input id="fKeyword" placeholder="账号 / 姓名 模糊搜索" style="width:220px">
+        <button class="primary" onclick="Admin.loadUsers()">查询</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th>用户 ID</th><th>账号</th><th>姓名</th><th>角色</th><th>状态</th><th>注册时间</th><th>操作</th>
+          </tr></thead>
+          <tbody id="usrBody"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="foot">禁用后该账号将无法登录；所有状态变更写入审计日志（user.enable / user.disable）。</div>
+    </div>
+  </section>
+
+  <!-- ============ 模板审核 ============ -->
+  <section id="tab-templates" hidden>
+    <div class="panel">
+      <h2>待审核模板 <span class="tag" id="tplPending">—</span>
+        <span class="spacer"></span><button onclick="Admin.loadTemplates()">刷新</button></h2>
+      <table>
+        <thead><tr><th>ID</th><th>模板编码</th><th>名称</th><th>类型</th><th>提交时间</th><th>操作</th></tr></thead>
+        <tbody id="tplAuditBody"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>全部模板 <span class="tag" id="tplAll">—</span></h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>ID</th><th>模板编码</th><th>版本</th><th>名称</th><th>状态</th><th>发布时间</th><th>操作</th></tr></thead>
+          <tbody id="tplAllBody"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="foot">审核通过后进入已发布；下线后历史报告仍可查看，进行中的测评允许完成（动作写审计日志）。</div>
+    </div>
+  </section>
+
+  <!-- ============ 审计日志 ============ -->
+  <section id="tab-logs" hidden>
+    <div class="panel">
+      <h2>操作审计日志 <span class="tag" id="logCount">—</span>
+        <span class="spacer"></span><button onclick="Admin.loadLogs()">刷新</button></h2>
+      <div class="toolbar">
+        <input id="fAction" placeholder="按动作筛选，如 user.disable" style="width:230px">
+        <button class="primary" onclick="Admin.loadLogs()">查询</button>
+        <span class="spacer"></span>
+        <select id="fLogLimit">
+          <option value="100">最近 100 条</option>
+          <option value="200">最近 200 条</option>
+          <option value="500">最近 500 条</option>
+        </select>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th class="num">ID</th><th>时间</th><th>操作人</th><th>角色</th><th>动作</th>
+            <th>对象</th><th>详情</th><th>来源 IP</th>
+          </tr></thead>
+          <tbody id="logBody"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="foot">管理员敏感操作全量留痕，保留 ≥ 1 年（合规要求）。</div>
+    </div>
+  </section>
+
+  <!-- ============ 预警阈值 ============ -->
+  <section id="tab-alerts" hidden>
+    <div class="panel">
+      <h2>运营预警阈值 <span class="tag">FR-V-10</span>
+        <span class="spacer"></span><button onclick="Admin.loadAlerts()">重置</button>
+        <button class="primary" onclick="Admin.saveAlerts()">保存</button></h2>
+      <div id="thrBox"><div class="empty">加载中…</div></div>
+      <div class="foot" id="thrFoot"></div>
+    </div>
+  </section>
+
+  <!-- ============ 角色配置 ============ -->
+  <section id="tab-roles" hidden>
+    <div class="panel">
+      <h2>角色 - 权限矩阵 <span class="tag">需求 §3.1 RBAC</span>
+        <span class="spacer"></span><button onclick="Admin.loadRoles()">刷新</button></h2>
+      <table class="matrix">
+        <thead id="roleHead"></thead>
+        <tbody id="roleBody"><tr><td class="empty">加载中…</td></tr></tbody>
+      </table>
+      <div class="foot">调整后整表回写 system_config.role.permissions 并记审计日志（role.update）；改动即时生效，无需发版。</div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-head" id="dlgHead">确认操作</div>
+  <div class="dlg-body">
+    <p id="dlgMsg"></p>
+    <textarea id="dlgRemark" placeholder="备注（选填，将写入审计日志）"></textarea>
+  </div>
+  <div class="dlg-foot">
+    <button onclick="Admin.closeDlg()">取消</button>
+    <button class="primary" id="dlgOk">确认</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var API = window.API;
+
+  var ROLE_CN = { user: '普通用户', dietitian: '营养师', operator: '运营', admin: '管理员' };
+  var TPL_CN = { draft: '草稿', pending: '待审核', published: '已发布', offline: '已下线' };
+  var LEVEL_CN = { excellent: '优秀', good: '良好', needs_improvement: '待改善', unknown: '未评级' };
+
+  var state = { users: [], alerts: [], roles: null, dlgCb: null };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function fmtTime(t) { return t ? String(t).replace('T', ' ').slice(0, 19) : '—'; }
+  function banner(msg, cls) {
+    var b = $('banner');
+    if (!msg) { b.className = 'banner'; b.textContent = ''; return; }
+    b.className = 'banner ' + (cls || 'err');
+    b.textContent = msg;
+  }
+  var toastTimer = null;
+  function toast(msg, bad) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (bad ? ' bad' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+  function pillStatus(s) {
+    if (s === 'active' || s === 'published') { return '<span class="pill ok">' + (TPL_CN[s] || '正常') + '</span>'; }
+    if (s === 'disabled') { return '<span class="pill bad">已禁用</span>'; }
+    if (s === 'pending') { return '<span class="pill warn">待审核</span>'; }
+    return '<span class="pill mute">' + (TPL_CN[s] || s || '—') + '</span>';
+  }
+
+  function needLogin() {
+    banner('请先以管理员身份登录：<a class="link" href="/index.html">返回工作台登录</a>', 'err');
+    setTimeout(function () { location.href = '/index.html'; }, 1600);
+  }
+
+  function guard(fn) {
+    return function () {
+      var args = arguments, self = this;
+      banner('');
+      return fn.apply(self, args).catch(function (e) {
+        if (e && (e.code === 10001 || e.code === 10002 || e.code === 10003)) { needLogin(); return; }
+        banner('操作失败：' + (e && e.message ? e.message : e));
+      });
+    };
+  }
+
+  /* ------------------------- 概览 ------------------------- */
+  var OVERVIEW_KEYS = [
+    ['users', '注册用户'], ['new_users_today', '今日新增'], ['dietitians', '已认证营养师'],
+    ['pending_dietitians', '待审资质'], ['assessments', '测评记录'], ['reports', '生成报告'],
+    ['consultations', '人工咨询'], ['knowledge_docs', '知识库文档']
+  ];
+
+  var loadOverview = guard(function () {
+    return API.admin.overview().then(function (d) {
+      d = d || {};
+      var html = '';
+      OVERVIEW_KEYS.forEach(function (k) {
+        var v = d[k[0]];
+        html += '<div class="card"><div class="k">' + k[1] + '</div><div class="v">' +
+          (v === null || v === undefined ? '—' : Number(v).toLocaleString()) + '</div></div>';
+      });
+      var avg = (d.avg_score === null || d.avg_score === undefined) ? '—' : d.avg_score;
+      html += '<div class="card"><div class="k">平均得分</div><div class="v">' + avg +
+        '</div><div class="x">百分制</div></div>';
+      var comp = d.completed_assessments, all = d.assessments;
+      html += '<div class="card"><div class="k">完成测评</div><div class="v">' +
+        (comp === undefined ? '—' : Number(comp).toLocaleString()) + '</div><div class="x">共 ' +
+        (all === undefined ? '—' : Number(all).toLocaleString()) + ' 条</div></div>';
+      $('ovCards').innerHTML = html;
+
+      var dist = d.level_distribution || {};
+      var total = 0;
+      Object.keys(dist).forEach(function (k) { total += dist[k]; });
+      var max = 1;
+      Object.keys(dist).forEach(function (k) { if (dist[k] > max) { max = dist[k]; } });
+      var bh = '';
+      if (!total) { bh = '<div class="empty">暂无报告数据</div>'; }
+      else {
+        ['excellent', 'good', 'needs_improvement'].forEach(function (lv) {
+          var n = dist[lv] || 0;
+          var pct = total ? (n * 100 / total) : 0;
+          bh += '<div class="bar"><span>' + (LEVEL_CN[lv] || lv) + '</span>' +
+            '<span class="track"><span class="fill" style="width:' + (n * 100 / max).toFixed(1) + '%"></span></span>' +
+            '<span class="val">' + Number(n).toLocaleString() + '（' + pct.toFixed(1) + '%）</span></div>';
+        });
+        Object.keys(dist).forEach(function (lv) {
+          if (['excellent', 'good', 'needs_improvement'].indexOf(lv) >= 0) { return; }
+          var n = dist[lv] || 0;
+          bh += '<div class="bar"><span>' + (LEVEL_CN[lv] || lv) + '</span>' +
+            '<span class="track"><span class="fill" style="width:' + (n * 100 / max).toFixed(1) + '%"></span></span>' +
+            '<span class="val">' + Number(n).toLocaleString() + '（' + (total ? (n * 100 / total).toFixed(1) : '0.0') + '%）</span></div>';
+        });
+      }
+      $('ovLevels').innerHTML = bh;
+      $('ovAt').textContent = '数据来自 /admin/overview（实时统计）';
+    });
+  });
+
+  /* ------------------------- 用户管理 ------------------------- */
+  var loadUsers = guard(function () {
+    var params = {
+      role: $('fRole').value, status: $('fStatus').value,
+      keyword: $('fKeyword').value.trim(), limit: 100
+    };
+    $('usrBody').innerHTML = '<tr><td colspan="7" class="empty">加载中…</td></tr>';
+    return API.admin.users(params).then(function (d) {
+      var items = (d && d.items) || [];
+      state.users = items;
+      $('usrCount').textContent = items.length + ' 条';
+      if (!items.length) {
+        $('usrBody').innerHTML = '<tr><td colspan="7" class="empty">没有符合条件的用户</td></tr>';
+        return;
+      }
+      var h = '';
+      items.forEach(function (u) {
+        var active = u.status === 'active';
+        h += '<tr>' +
+          '<td class="mono">' + esc(u.user_id) + '</td>' +
+          '<td>' + esc(u.username) + '</td>' +
+          '<td>' + esc(u.real_name || '—') + '</td>' +
+          '<td>' + (ROLE_CN[u.role] || esc(u.role)) + '</td>' +
+          '<td>' + pillStatus(u.status) + '</td>' +
+          '<td class="mono">' + fmtTime(u.created_at) + '</td>' +
+          '<td>' + (active
+            ? '<button class="danger" onclick="Admin.askStatus(\'' + esc(u.user_id) + '\',\'disabled\')">禁用</button>'
+            : '<button class="ok" onclick="Admin.askStatus(\'' + esc(u.user_id) + '\',\'active\')">解封</button>') +
+          '</td></tr>';
+      });
+      $('usrBody').innerHTML = h;
+    });
+  });
+
+  function askStatus(uid, status) {
+    var u = null;
+    state.users.forEach(function (x) { if (x.user_id === uid) { u = x; } });
+    var name = u ? (u.real_name || u.username) : uid;
+    openDlg(status === 'disabled' ? '禁用账号' : '解封账号',
+      '确认将「' + name + '（' + uid + '）」' + (status === 'disabled' ? '禁用？禁用后无法登录。' : '解封？解封后恢复登录。'),
+      function (remark) {
+        return API.admin.setUserStatus(uid, status).then(function () {
+          toast('已' + (status === 'disabled' ? '禁用' : '解封') + '：' + name);
+          return loadUsers();
+        });
+      });
+  }
+
+  /* ------------------------- 模板审核 ------------------------- */
+  var loadTemplates = guard(function () {
+    $('tplAuditBody').innerHTML = '<tr><td colspan="6" class="empty">加载中…</td></tr>';
+    return Promise.all([API.admin.templateAudits(), API.admin.templates({})]).then(function (r) {
+      var pend = (r[0] && r[0].items) || [];
+      var all = (r[1] && r[1].items) || [];
+      $('tplPending').textContent = pend.length + ' 条待审';
+      $('tplAll').textContent = all.length + ' 个模板';
+
+      if (!pend.length) {
+        $('tplAuditBody').innerHTML = '<tr><td colspan="6" class="empty">暂无待审核模板</td></tr>';
+      } else {
+        var h = '';
+        pend.forEach(function (t) {
+          h += '<tr>' +
+            '<td class="num">' + t.id + '</td>' +
+            '<td class="mono">' + esc(t.code) + '</td>' +
+            '<td>' + esc(t.name) + '</td>' +
+            '<td>' + esc(t.type || '—') + '</td>' +
+            '<td class="mono">' + fmtTime(t.submitted_at) + '</td>' +
+            '<td><button class="ok" onclick="Admin.askTemplate(' + t.id + ',true)">通过</button> ' +
+            '<button class="danger" onclick="Admin.askTemplate(' + t.id + ',false)">驳回</button></td>' +
+            '</tr>';
+        });
+        $('tplAuditBody').innerHTML = h;
+      }
+
+      if (!all.length) {
+        $('tplAllBody').innerHTML = '<tr><td colspan="7" class="empty">暂无模板</td></tr>';
+      } else {
+        var h2 = '';
+        all.forEach(function (t) {
+          var canOffline = t.status === 'published';
+          h2 += '<tr>' +
+            '<td class="num">' + t.id + '</td>' +
+            '<td class="mono">' + esc(t.code) + '</td>' +
+            '<td class="num">v' + esc(t.version || 1) + '</td>' +
+            '<td>' + esc(t.name) + '</td>' +
+            '<td>' + pillStatus(t.status) + '</td>' +
+            '<td class="mono">' + fmtTime(t.published_at) + '</td>' +
+            '<td>' + (canOffline
+              ? '<button class="danger" onclick="Admin.askOffline(' + t.id + ',\'' + esc(t.name) + '\')">下线</button>'
+              : '<span class="foot">—</span>') +
+            '</td></tr>';
+        });
+        $('tplAllBody').innerHTML = h2;
+      }
+    });
+  });
+
+  function askTemplate(id, approve) {
+    openDlg(approve ? '审核通过' : '驳回模板',
+      '确认' + (approve ? '通过' : '驳回') + '模板 #' + id + '？' +
+      (approve ? '通过后进入已发布，可被用户发起测评。' : '驳回后模板回到草稿状态。'),
+      function (remark) {
+        return API.admin.auditTemplate(id, approve, remark).then(function () {
+          toast('模板 #' + id + (approve ? ' 已通过' : ' 已驳回'));
+          return loadTemplates();
+        });
+      });
+  }
+
+  function askOffline(id, name) {
+    openDlg('下线模板', '确认下线「' + name + '」？下线后不再对用户开放，历史报告仍可查看。',
+      function () {
+        return API.admin.offlineTemplate(id).then(function () {
+          toast('模板已下线：' + name);
+          return loadTemplates();
+        });
+      });
+  }
+
+  /* ------------------------- 审计日志 ------------------------- */
+  var loadLogs = guard(function () {
+    var params = { limit: parseInt($('fLogLimit').value, 10) || 100 };
+    var a = $('fAction').value.trim();
+    if (a) { params.action = a; }
+    $('logBody').innerHTML = '<tr><td colspan="8" class="empty">加载中…</td></tr>';
+    return API.admin.logs(params).then(function (d) {
+      var items = (d && d.items) || [];
+      $('logCount').textContent = items.length + ' 条';
+      if (!items.length) {
+        $('logBody').innerHTML = '<tr><td colspan="8" class="empty">没有符合条件的日志</td></tr>';
+        return;
+      }
+      var h = '';
+      items.forEach(function (g) {
+        var detail = g.content;
+        if (detail && typeof detail === 'object') { detail = JSON.stringify(detail); }
+        h += '<tr>' +
+          '<td class="num">' + g.id + '</td>' +
+          '<td class="mono">' + fmtTime(g.created_at) + '</td>' +
+          '<td class="mono">' + esc(g.operator_id) + '</td>' +
+          '<td>' + (ROLE_CN[g.operator_role] || esc(g.operator_role || '—')) + '</td>' +
+          '<td><span class="pill mute">' + esc(g.action) + '</span></td>' +
+          '<td class="mono">' + esc((g.target_type || '—') + (g.target_id ? '/' + g.target_id : '')) + '</td>' +
+          '<td class="wrap">' + esc(detail || '—') + '</td>' +
+          '<td class="mono">' + esc(g.ip_address || '—') + '</td>' +
+          '</tr>';
+      });
+      $('logBody').innerHTML = h;
+    });
+  });
+
+  /* ------------------------- 预警阈值 ------------------------- */
+  var loadAlerts = guard(function () {
+    $('thrBox').innerHTML = '<div class="empty">加载中…</div>';
+    return API.admin.alerts().then(function (d) {
+      state.alerts = (d && d.items) || [];
+      if (!state.alerts.length) { $('thrBox').innerHTML = '<div class="empty">暂无可配置项</div>'; return; }
+      var h = '';
+      state.alerts.forEach(function (it) {
+        h += '<div class="thr-row" data-key="' + esc(it.key) + '">' +
+          '<div class="nm">' + esc(it.name) + '<small>' + esc(it.key) + '</small></div>' +
+          '<div class="inp"><input type="number" min="' + it.min + '" max="' + it.max +
+          '" value="' + it.value + '"><span class="u">' + esc(it.unit) + '</span></div>' +
+          '<div class="ds">' + esc(it.desc) + '<br><span class="foot">合法区间 ' + it.min + ' – ' + it.max +
+          ' ' + esc(it.unit) + '，默认 ' + it.default + '</span></div>' +
+          '</div>';
+      });
+      $('thrBox').innerHTML = h;
+      $('thrFoot').textContent = (d && d.notify_channel ? d.notify_channel + '。' : '') +
+        (d && d.updated_by ? '上次修改：' + d.updated_by + ' @ ' + fmtTime(d.updated_at) : '尚未修改过（当前为默认值）');
+    });
+  });
+
+  function saveAlerts() {
+    var box = $('thrBox');
+    var inputs = box.querySelectorAll('.thr-row');
+    var payload = {};
+    for (var i = 0; i < inputs.length; i++) {
+      var key = inputs[i].getAttribute('data-key');
+      var v = inputs[i].querySelector('input').value;
+      if (v === '' || isNaN(Number(v))) {
+        toast('「' + key + '」请填写有效数字', true); return;
+      }
+      payload[key] = Math.round(Number(v));
+    }
+    banner('');
+    API.admin.saveAlerts({ thresholds: payload }).then(function () {
+      toast('预警阈值已保存');
+      return loadAlerts();
+    }).catch(function (e) { banner('保存失败：' + (e && e.message ? e.message : e)); });
+  }
+
+  /* ------------------------- 角色配置 ------------------------- */
+  var loadRoles = guard(function () {
+    $('roleBody').innerHTML = '<tr><td class="empty">加载中…</td></tr>';
+    return API.admin.roles().then(function (d) {
+      d = d || {}; state.roles = d;
+      var roles = d.roles || [], items = d.items || [];
+      if (!roles.length) { $('roleBody').innerHTML = '<tr><td class="empty">暂无配置</td></tr>'; return; }
+      var head = '<tr><th>能力</th>';
+      roles.forEach(function (r) { head += '<th class="ctr">' + esc(r.label) + '</th>'; });
+      head += '</tr>';
+      $('roleHead').innerHTML = head;
+
+      var h = '';
+      items.forEach(function (it) {
+        h += '<tr><td>' + esc(it.name) + '<br><span class="foot">' + esc(it.capability) + '</span></td>';
+        roles.forEach(function (r) {
+          var on = !!it.roles[r.key];
+          h += '<td class="ctr"><input type="checkbox" ' + (on ? 'checked' : '') +
+            ' onchange="Admin.toggleRole(\'' + esc(it.capability) + '\',\'' + esc(r.key) + '\',this)"></td>';
+        });
+        h += '</tr>';
+      });
+      $('roleBody').innerHTML = h;
+    });
+  });
+
+  function toggleRole(cap, role, el) {
+    var want = el.checked;
+    banner('');
+    API.admin.saveRole({ capability: cap, role: role, allowed: want }).then(function () {
+      toast('已更新：' + cap + ' × ' + (ROLE_CN[role] || role) + ' → ' + (want ? '允许' : '禁止'));
+    }).catch(function (e) {
+      el.checked = !want;   // 回滚勾选
+      banner('更新失败：' + (e && e.message ? e.message : e));
+    });
+  }
+
+  /* ------------------------- 通用对话框 ------------------------- */
+  function openDlg(title, msg, cb) {
+    $('dlgHead').textContent = title;
+    $('dlgMsg').innerHTML = msg;
+    $('dlgRemark').value = '';
+    state.dlgCb = cb;
+    var dlg = $('dlg');
+    if (typeof dlg.showModal === 'function') { dlg.showModal(); } else { dlg.setAttribute('open', ''); }
+  }
+  function closeDlg() {
+    var dlg = $('dlg');
+    if (typeof dlg.close === 'function') { dlg.close(); } else { dlg.removeAttribute('open'); }
+    state.dlgCb = null;
+  }
+  function confirmDlg() {
+    var cb = state.dlgCb, remark = $('dlgRemark').value.trim();
+    var okBtn = $('dlgOk');
+    okBtn.disabled = true;
+    Promise.resolve(cb ? cb(remark) : null).then(function () {
+      okBtn.disabled = false; closeDlg();
+    }).catch(function (e) {
+      okBtn.disabled = false; closeDlg();
+      banner('操作失败：' + (e && e.message ? e.message : e));
+    });
+  }
+
+  /* ------------------------- Tab 切换 ------------------------- */
+  var LOADERS = {
+    overview: loadOverview, users: loadUsers, templates: loadTemplates,
+    logs: loadLogs, alerts: loadAlerts, roles: loadRoles
+  };
+  function switchTab(name) {
+    var btns = document.querySelectorAll('#tabs button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = (btns[i].getAttribute('data-tab') === name) ? 'on' : '';
+    }
+    Object.keys(LOADERS).forEach(function (k) {
+      $('tab-' + k).hidden = (k !== name);
+    });
+    banner('');
+    if (LOADERS[name]) { LOADERS[name](); }
+  }
+
+  /* ------------------------- 启动 ------------------------- */
+  function boot() {
+    var tk = API.Token.get();
+    if (!tk) { needLogin(); return; }
+    var u = API.Token.user();
+    if (u) {
+      $('whoami').textContent = (u.real_name || u.name || u.username || u.sub || '已登录') +
+        '（' + (ROLE_CN[u.role] || u.role || '') + '）';
+      if (u.role && u.role !== 'admin' && u.role !== 'operator') {
+        banner('当前角色为「' + (ROLE_CN[u.role] || u.role) + '」，管理端功能需要管理员权限；接口会返回 10005 无权限。', 'info');
+      }
+    } else {
+      $('whoami').textContent = '已登录';
+    }
+    var btns = document.querySelectorAll('#tabs button');
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () { switchTab(b.getAttribute('data-tab')); });
+      })(btns[i]);
+    }
+    $('dlgOk').addEventListener('click', confirmDlg);
+    $('btnLogout').addEventListener('click', function () {
+      API.auth.logout().catch(function () { }).then(function () {
+        API.Token.clear(); location.href = '/index.html';
+      });
+    });
+    switchTab('overview');
+  }
+
+  window.Admin = {
+    loadOverview: loadOverview, loadUsers: loadUsers, loadTemplates: loadTemplates,
+    loadLogs: loadLogs, loadAlerts: loadAlerts, loadRoles: loadRoles,
+    askStatus: askStatus, askTemplate: askTemplate, askOffline: askOffline,
+    saveAlerts: saveAlerts, toggleRole: toggleRole,
+    closeDlg: closeDlg, switchTab: switchTab
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else { boot(); }
+})();
+</script>
+</body>
+</html>

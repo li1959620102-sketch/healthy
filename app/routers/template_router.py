@@ -6,15 +6,21 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.deps import get_current_user, get_optional_user, require_role, ROLE_ADMIN, ROLE_DIETITIAN
 from app.core.errors import BizError, ErrCode
 from app.core.responses import success
 from app.dao.assessment_dao import TemplateDAO, session_scope
 from app.schemas.platform import TemplateAuditReq, TemplateCreateReq, TemplateUpdateReq
+from app.services.admin_service import admin_service
 
 router = APIRouter(prefix="/templates", tags=["测评模板"])
+
+
+def _ip(request: Request) -> Optional[str]:
+    return (request.headers.get("X-Forwarded-For")
+            or (request.client.host if request.client else None))
 
 
 def _brief(t) -> dict:
@@ -121,21 +127,30 @@ async def submit_audit(template_id: int, user: dict = Depends(get_current_user))
         return success(data=_brief(updated))
 
 
-@router.post("/{template_id}/audit", summary="审核模板", description="管理员审核通过或驳回；通过后进入已发布。")
-async def audit_template(template_id: int, body: TemplateAuditReq,
+@router.post("/{template_id}/audit", summary="审核模板", description="管理员审核通过或驳回；通过后进入已发布；审核动作记入审计日志。")
+async def audit_template(template_id: int, body: TemplateAuditReq, request: Request,
                          user: dict = Depends(require_role(ROLE_ADMIN))):
     with session_scope() as s:
         updated = TemplateDAO.audit(template_id, str(user.get("sub")),
                                     body.approve, body.remark or "", session=s)
         if not updated:
             raise BizError(ErrCode.TEMPLATE_NOT_FOUND, "模板不存在")
-        return success(data=_brief(updated), message="审核通过" if body.approve else "已驳回")
+        brief = _brief(updated)
+    admin_service.log_template_audit(
+        user, template_id, "template.audit",
+        {"approve": body.approve, "remark": body.remark or "", "status": brief.get("status")},
+        _ip(request))
+    return success(data=brief, message="审核通过" if body.approve else "已驳回")
 
 
-@router.post("/{template_id}/offline", summary="下线模板", description="管理员下线；历史报告仍可查看，进行中的测评允许完成。")
-async def offline_template(template_id: int, user: dict = Depends(require_role(ROLE_ADMIN))):
+@router.post("/{template_id}/offline", summary="下线模板", description="管理员下线；历史报告仍可查看，进行中的测评允许完成；动作记入审计日志。")
+async def offline_template(template_id: int, request: Request,
+                           user: dict = Depends(require_role(ROLE_ADMIN))):
     with session_scope() as s:
         updated = TemplateDAO.offline(template_id, session=s)
         if not updated:
             raise BizError(ErrCode.TEMPLATE_NOT_FOUND, "模板不存在")
-        return success(data=_brief(updated), message="已下线")
+        brief = _brief(updated)
+    admin_service.log_template_audit(user, template_id, "template.offline",
+                                     {"status": brief.get("status")}, _ip(request))
+    return success(data=brief, message="已下线")

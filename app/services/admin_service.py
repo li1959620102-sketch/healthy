@@ -4,9 +4,11 @@
 敏感操作（禁用账号、审核资质、改系统参数）统一写 operation_log，保留 ≥1 年（合规要求）。
 system_config 中的 `scoring.*` 与 `agent.*` 是评分与智能体的关键参数，修改同样记日志。
 """
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.core import rules
 from app.core.errors import BizError, ErrCode
 from app.dao.admin_dao import AdminDAO
 from app.dao.assessment_dao import session_scope
@@ -15,7 +17,7 @@ from app.models.mysql.platform import AssessmentTemplate
 
 logger = logging.getLogger("AdminService")
 
-SENSITIVE_PREFIX = ("scoring.", "agent.", "scene.")
+SENSITIVE_PREFIX = ("scoring.", "agent.", "scene.", "alert.", "role.")
 
 
 class AdminService:
@@ -36,10 +38,13 @@ class AdminService:
             u = AdminDAO.set_user_status(user_id, status, session=s)
             if not u:
                 raise BizError(ErrCode.USER_NOT_FOUND, "用户不存在")
-            AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
-                             "user_status_change", "user", user_id,
-                             {"status": status}, ip, session=s)
+            # 动作名与审计台账口径一致（点分命名）：user.enable / user.disable
+            AdminDAO.add_log(
+                operator.get("sub"), operator.get("role", ""),
+                "user.enable" if status == "active" else "user.disable",
+                "user", user_id, {"status": status}, ip, session=s)
             return u.to_dict()
+
 
     # ---------------- 资质审核 ---------------- #
     @staticmethod
@@ -60,7 +65,7 @@ class AdminService:
             if not prof:
                 raise BizError(ErrCode.DIETITIAN_NOT_FOUND, "资质申请不存在")
             AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
-                             "nutritionist_audit", "dietitian", user_id,
+                             "dietitian.audit", "dietitian", user_id,
                              {"approve": approve, "reason": reason}, ip, session=s)
             return {"user_id": prof.user_id, "audit_status": prof.audit_status}
 
@@ -75,6 +80,21 @@ class AdminService:
                 "id": t.id, "code": t.code, "version": int(t.version),
                 "name": t.name, "type": t.type, "created_by": t.created_by,
                 "submitted_at": t.submitted_at,
+            } for t in rows], "total": len(rows)}
+
+    @staticmethod
+    def templates(status: Optional[str] = None, limit: int = 200) -> Dict[str, Any]:
+        """全量模板（管理员视角）：可按状态筛选，供管理后台审核 / 下线操作。"""
+        with session_scope() as s:
+            q = s.query(AssessmentTemplate)
+            if status:
+                q = q.filter_by(status=status)
+            rows = q.order_by(AssessmentTemplate.id.desc()).limit(limit).all()
+            return {"items": [{
+                "id": t.id, "code": t.code, "version": int(t.version) if t.version else None,
+                "name": t.name, "type": t.type, "status": t.status,
+                "created_by": t.created_by,
+                "submitted_at": t.submitted_at, "published_at": t.published_at,
             } for t in rows], "total": len(rows)}
 
     # ---------------- 系统配置 ---------------- #
@@ -95,13 +115,133 @@ class AdminService:
             raise BizError(ErrCode.PARAM_INVALID, "缺少 config_key")
         with session_scope() as s:
             row = AdminDAO.set_config(key, value, desc, operator.get("sub"), session=s)
-            # 评分/智能体/场景参数属敏感配置，变更必须留痕
+            # 评分/智能体/场景/预警/角色参数属敏感配置，变更必须留痕
             if key.startswith(SENSITIVE_PREFIX):
                 AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
-                                 "config_change", "system_config", key,
+                                 "config.update", "system_config", key,
                                  {"value": value[:500]}, ip, session=s)
             return {"config_key": row.config_key, "config_value": row.config_value,
                     "updated_by": row.updated_by, "updated_at": row.updated_at}
+
+    # ---------------- 模板审核（补审计留痕） ---------------- #
+    @staticmethod
+    def log_template_audit(operator: dict, template_id: Any, action: str,
+                           detail: Optional[dict] = None, ip: Optional[str] = None) -> None:
+        """模板审核 / 下线动作写审计日志（action：template.audit / template.offline）。"""
+        with session_scope() as s:
+            AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
+                             action, "template", str(template_id), detail, ip, session=s)
+
+    @staticmethod
+    def log_dashboard_update(operator: dict, detail: Optional[dict] = None,
+                             ip: Optional[str] = None) -> None:
+        """大屏方案保存写审计日志（action：dashboard.update）。"""
+        with session_scope() as s:
+            AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
+                             "dashboard.update", "system_config", "dashboard.layout",
+                             detail, ip, session=s)
+
+    # ---------------- 预警阈值（FR-V-10） ---------------- #
+    @staticmethod
+    def alert_thresholds() -> Dict[str, Any]:
+        """返回预警阈值：默认值 + 当前生效值 + 每项的中文名/单位/区间/说明。"""
+        with session_scope() as s:
+            row = AdminDAO.get_config(rules.ALERT_CONFIG_KEY, session=s)
+            saved: Dict[str, Any] = {}
+            if row and row.config_value:
+                try:
+                    saved = json.loads(row.config_value)
+                except (ValueError, TypeError):
+                    saved = {}
+            items = []
+            for key, spec in rules.ALERT_THRESHOLDS.items():
+                items.append({
+                    "key": key, "name": spec["name"], "unit": spec["unit"],
+                    "min": spec["min"], "max": spec["max"], "desc": spec["desc"],
+                    "default": spec["default"],
+                    "value": rules.clamp_alert(key, saved.get(key, spec["default"])),
+                })
+            return {
+                "items": items,
+                "updated_by": row.updated_by if row else None,
+                "updated_at": row.updated_at if row else None,
+                "notify_channel": "短信 / 邮件通知待网关接入，当前仅落配置并留痕",
+            }
+
+    @staticmethod
+    def set_alert_thresholds(operator: dict, thresholds: Dict[str, Any],
+                             ip: Optional[str] = None) -> Dict[str, Any]:
+        """保存预警阈值：逐项收敛到合法区间，写入 alert.thresholds 并留痕。"""
+        if not isinstance(thresholds, dict) or not thresholds:
+            raise BizError(ErrCode.PARAM_INVALID, "缺少 thresholds")
+        unknown = [k for k in thresholds if k not in rules.ALERT_THRESHOLDS]
+        if unknown:
+            raise BizError(ErrCode.PARAM_INVALID, f"未知阈值项：{', '.join(unknown)}")
+        clean = {k: rules.clamp_alert(k, v) for k, v in thresholds.items()}
+        with session_scope() as s:
+            row = AdminDAO.set_config(rules.ALERT_CONFIG_KEY, json.dumps(clean, ensure_ascii=False),
+                                      "运营预警阈值（FR-V-10，改配置不改代码）",
+                                      operator.get("sub"), session=s)
+            AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
+                             "alert.update", "system_config", rules.ALERT_CONFIG_KEY,
+                             clean, ip, session=s)
+            return {"config_key": row.config_key, "values": clean,
+                    "updated_by": row.updated_by, "updated_at": row.updated_at}
+
+    # ---------------- 角色配置（需求 §3.1 RBAC） ---------------- #
+    @staticmethod
+    def roles() -> Dict[str, Any]:
+        """返回角色-权限矩阵：角色清单 + 能力清单 + 当前开关（未保存则由默认矩阵兜底）。"""
+        with session_scope() as s:
+            row = AdminDAO.get_config(rules.ROLE_CONFIG_KEY, session=s)
+            matrix: Dict[str, Any] = {}
+            if row and row.config_value:
+                try:
+                    matrix = json.loads(row.config_value)
+                except (ValueError, TypeError):
+                    matrix = {}
+            items = []
+            for cap, label in rules.ROLE_CAPABILITIES.items():
+                saved = matrix.get(cap) or {}
+                items.append({
+                    "capability": cap, "name": label,
+                    "roles": {r: bool(saved.get(r, rules.ROLE_PERMISSIONS[cap][r]))
+                              for r in rules.ROLES},
+                })
+            return {
+                "roles": [{"key": r, "label": rules.ROLE_LABELS[r]} for r in rules.ROLES],
+                "items": items,
+                "updated_by": row.updated_by if row else None,
+                "updated_at": row.updated_at if row else None,
+            }
+
+    @staticmethod
+    def set_role_permission(operator: dict, cap: str, role: str, allowed: bool,
+                            ip: Optional[str] = None) -> Dict[str, Any]:
+        """调整单个「角色 × 能力」开关，整表回写 role.permissions 并留痕。"""
+        if cap not in rules.ROLE_CAPABILITIES:
+            raise BizError(ErrCode.PARAM_INVALID, f"未知能力键：{cap}")
+        if role not in rules.ROLES:
+            raise BizError(ErrCode.PARAM_INVALID, f"未知角色：{role}")
+        with session_scope() as s:
+            row = AdminDAO.get_config(rules.ROLE_CONFIG_KEY, session=s)
+            matrix: Dict[str, Any] = {}
+            if row and row.config_value:
+                try:
+                    matrix = json.loads(row.config_value)
+                except (ValueError, TypeError):
+                    matrix = {}
+            current = dict(matrix.get(cap) or rules.ROLE_PERMISSIONS[cap])
+            current[role] = bool(allowed)
+            matrix[cap] = current
+            AdminDAO.set_config(rules.ROLE_CONFIG_KEY, json.dumps(matrix, ensure_ascii=False),
+                                "角色-权限矩阵（需求 §3.1 RBAC，改配置不改代码）",
+                                operator.get("sub"), session=s)
+            AdminDAO.add_log(operator.get("sub"), operator.get("role", ""),
+                             "role.update", "system_config", cap,
+                             {"role": role, "allowed": bool(allowed)}, ip, session=s)
+            return {"capability": cap, "roles": {r: bool(current.get(r, False)) for r in rules.ROLES}}
+
 
     # ---------------- 日志 ---------------- #
     @staticmethod

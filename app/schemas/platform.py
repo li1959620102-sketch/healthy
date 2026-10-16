@@ -284,6 +284,20 @@ class AdminConfigReq(BaseModel):
     description: Optional[str] = Field(None, description="说明")
 
 
+class AlertThresholdReq(BaseModel):
+    thresholds: Dict[str, int] = Field(
+        ..., description="预警阈值键值对，键取自 GET /admin/alerts/thresholds；越界值会被收敛到合法区间",
+        examples=[{"dau_drop_pct": 10, "score_low_ratio": 30, "consult_timeout_min": 30,
+                   "kb_hit_rate": 60, "report_fail_rate": 5}])
+
+
+class RolePermissionReq(BaseModel):
+    role: str = Field(..., description="角色：user / dietitian / operator / admin")
+    capability: str = Field(..., description="能力键，取自 GET /admin/roles")
+    allowed: bool = Field(..., description="是否允许该角色使用该能力")
+
+
+
 # --------------------------------------------------------------------------- #
 # L. 食养计划 / M. 智能荐菜（原型新增）
 # --------------------------------------------------------------------------- #

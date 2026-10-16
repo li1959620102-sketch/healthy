@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.deps import require_role, ROLE_ADMIN, ROLE_OPERATOR
 from app.core.responses import success
-from app.schemas.platform import AdminConfigReq, AuditReq, UserStatusReq, DashboardLayoutReq
+from app.schemas.platform import (AdminConfigReq, AlertThresholdReq, AuditReq,
+                                  DashboardLayoutReq, RolePermissionReq, UserStatusReq)
 from app.services.admin_service import admin_service
 from app.services.scene_service import scene_service
 
@@ -54,6 +55,13 @@ async def template_audits(_: dict = Depends(require_role(ROLE_ADMIN))):
     return success(data=admin_service.template_audits())
 
 
+@router.get("/templates", summary="全量模板列表", description="管理员视角的测评模板全量清单，可按状态筛选（draft/pending/published/offline）。")
+async def templates(status: Optional[str] = Query(None, description="draft/pending/published/offline"),
+                    limit: int = Query(200, ge=1, le=500),
+                    _: dict = Depends(require_role(ROLE_ADMIN))):
+    return success(data=admin_service.templates(status, limit))
+
+
 @router.get("/config", summary="系统参数列表", description="含智能体参数、评分权重与阈值（scoring.*）等。")
 async def get_config(_: dict = Depends(require_role(ROLE_ADMIN))):
     return success(data=admin_service.list_configs())
@@ -64,6 +72,31 @@ async def set_config(body: AdminConfigReq, request: Request,
                      user: dict = Depends(require_role(ROLE_ADMIN))):
     return success(data=admin_service.set_config(user, body.config_key, body.config_value,
                                                  body.description, _ip(request)))
+
+
+@router.get("/alerts/thresholds", summary="预警阈值", description="运营预警阈值（FR-V-10）：默认值、当前生效值与合法区间；通知渠道待网关接入。")
+async def get_alerts(_: dict = Depends(require_role(ROLE_ADMIN, ROLE_OPERATOR))):
+    return success(data=admin_service.alert_thresholds())
+
+
+@router.put("/alerts/thresholds", summary="保存预警阈值", description="越界值自动收敛到合法区间；写入 alert.thresholds 并记审计日志。")
+async def set_alerts(body: AlertThresholdReq, request: Request,
+                     user: dict = Depends(require_role(ROLE_ADMIN))):
+    return success(data=admin_service.set_alert_thresholds(user, body.thresholds, _ip(request)),
+                   message="预警阈值已保存")
+
+
+@router.get("/roles", summary="角色权限矩阵", description="需求 §3.1 RBAC：角色清单、能力清单与当前开关（未保存时由默认矩阵兜底）。")
+async def get_roles(_: dict = Depends(require_role(ROLE_ADMIN))):
+    return success(data=admin_service.roles())
+
+
+@router.put("/roles", summary="调整角色权限", description="调整单个「角色 × 能力」开关，整表回写 role.permissions 并记审计日志。")
+async def set_role(body: RolePermissionReq, request: Request,
+                   user: dict = Depends(require_role(ROLE_ADMIN))):
+    return success(data=admin_service.set_role_permission(
+        user, body.capability, body.role, body.allowed, _ip(request)), message="权限已更新")
+
 
 
 @router.get("/overview", summary="运营概览", description="用户/测评/报告/咨询等核心指标汇总。")
@@ -88,11 +121,13 @@ async def get_ops_config(user: dict = Depends(require_role(ROLE_ADMIN, ROLE_OPER
     return success(data=scene_service.get_layout(user))
 
 
-@router.put("/dashboard/ops/config", summary="保存大屏方案", description="保存拖拽组装后的组件布局与设置（原型「保存方案」）。")
-async def save_ops_config(body: DashboardLayoutReq,
+@router.put("/dashboard/ops/config", summary="保存大屏方案", description="保存拖拽组装后的组件布局与设置（原型「保存方案」），动作记入审计日志。")
+async def save_ops_config(body: DashboardLayoutReq, request: Request,
                           user: dict = Depends(require_role(ROLE_ADMIN, ROLE_OPERATOR))):
-    return success(data=scene_service.save_layout(user, body.model_dump(exclude_none=True)),
-                   message="方案已保存")
+    payload = body.model_dump(exclude_none=True)
+    data = scene_service.save_layout(user, payload)
+    admin_service.log_dashboard_update(user, {"fields": sorted(payload.keys())}, _ip(request))
+    return success(data=data, message="方案已保存")
 
 
 @router.post("/dashboard/ops/snapshot", summary="导出大屏截图（留桩）", description="需服务端无头浏览器渲染，待接入；当前返回布局与数据快照，不伪造图片。")

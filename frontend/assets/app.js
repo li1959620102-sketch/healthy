@@ -231,6 +231,7 @@ function applyRoleUI() {
   show('navDietitian', canSee('dietitian'));
   show('navAnalytics', canSee('analytics'));
   show('navAdmin', canSee('admin'));
+  show('navAdminConsole', canSee('admin'));   // 管理后台（独立页，用户/模板/审计/预警/权限）
   const proVisible = canSee('dietitian') || canSee('analytics') || canSee('admin');
   show('navProTitle', proVisible);
   show('navPro', proVisible);

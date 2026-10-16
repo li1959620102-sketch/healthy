@@ -97,6 +97,16 @@ class AdminDAO:
                 s.close()
 
     @staticmethod
+    def get_config(key: str, session=None) -> Optional[SystemConfig]:
+        own = session is None
+        s = session or get_session()
+        try:
+            return s.query(SystemConfig).filter_by(config_key=key).first()
+        finally:
+            if own:
+                s.close()
+
+    @staticmethod
     def set_config(key: str, value: str, desc: Optional[str], operator: str,
                    session=None) -> SystemConfig:
         own = session is None
