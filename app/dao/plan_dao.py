@@ -124,6 +124,29 @@ class PlanDAO:
             if own:
                 s.close()
 
+    @staticmethod
+    def delete(plan_id: int, user_id: str, session=None) -> bool:
+        """按用户归属删除计划及食谱明细，供 Agent 补偿事务使用。"""
+        own = session is None
+        s = session or get_session()
+        try:
+            plan = (s.query(DietPlan)
+                    .filter(DietPlan.id == plan_id, DietPlan.user_id == str(user_id)).first())
+            if not plan:
+                return False
+            s.query(DietPlanRecipe).filter_by(plan_id=plan_id).delete(synchronize_session=False)
+            s.delete(plan)
+            if own:
+                s.commit()
+            return True
+        except SQLAlchemyError:
+            if own:
+                s.rollback()
+            raise
+        finally:
+            if own:
+                s.close()
+
 
 class TongueDAO:
     @staticmethod

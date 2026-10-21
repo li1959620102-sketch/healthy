@@ -148,8 +148,40 @@
       function (e) { clearTimeout(timer); throw e; });
   }
 
-  var get = function (p, auth) { return request(p, { method: 'GET', auth: !!auth }); };
-  var post = function (p, body, auth) { return request(p, { method: 'POST', body: body || {}, auth: !!auth }); };
+  /* 二进制响应（音频）：不能走 request()，它在 res.text() 里就把 body 读掉了。
+     成功回 audio/mpeg，失败回统一 JSON 信封（60008），所以按 Content-Type 分流。 */
+  function blobRequest(path, body, opt) {
+    opt = opt || {};
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, opt.timeout || 60000);
+    var headers = { 'Content-Type': 'application/json' };
+    var tk = Token.get();
+    if (tk) { headers['Authorization'] = 'Bearer ' + tk; }
+
+    return fetch(CFG.base + path, {
+      method: opt.method || 'POST', headers: headers, body: JSON.stringify(body || {}), signal: ctrl.signal
+    }).then(function (res) {
+      var type = res.headers.get('Content-Type') || '';
+      if (type.indexOf('application/json') >= 0) {
+        return res.json().then(function (payload) {
+          var msg = (payload && (payload.message || payload.detail)) || ('HTTP ' + res.status);
+          if (payload && payload.code === ErrCode.UNAUTHENTICATED) { onUnauthorized(); }
+          throw ApiError((payload && payload.code) || res.status, msg);
+        });
+      }
+      if (!res.ok) { throw ApiError(res.status, 'HTTP ' + res.status); }
+      return res.blob().then(function (blob) {
+        return { blob: blob, truncated: res.headers.get('X-TTS-Truncated') === 'true',
+                 chars: parseInt(res.headers.get('X-TTS-Chars') || '0', 10) };
+      });
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') { throw ApiError(-1, '语音合成超时，请稍后再试'); }
+      throw err;
+    }).then(function (v) { clearTimeout(timer); return v; },
+      function (e) { clearTimeout(timer); throw e; });
+  }
+
+  var get = function (p, auth) { return request(p, { method: 'GET', auth: !!auth }); };  var post = function (p, body, auth) { return request(p, { method: 'POST', body: body || {}, auth: !!auth }); };
   var put = function (p, body, auth) { return request(p, { method: 'PUT', body: body || {}, auth: !!auth }); };
   var patch = function (p, body, auth) { return request(p, { method: 'PATCH', body: body || {}, auth: !!auth }); };
   var del = function (p, auth) { return request(p, { method: 'DELETE', auth: !!auth }); };
@@ -231,6 +263,7 @@
         else if (email) { body.email = email; }
         return post('/api/v1/auth/login', body);
       },
+      resetPassword: function (identifier, verifyCode, newPassword) { return post('/api/v1/auth/password/reset', { identifier: identifier, verify_code: verifyCode, new_password: newPassword }); },
       guest: function () { return post('/api/v1/auth/guest', {}); },
       sendSms: function (phone) { return post('/api/v1/auth/sms/send', { phone: phone }); },
       sendEmail: function (email) { return post('/api/v1/auth/email/send', { email: email }); },
@@ -400,6 +433,12 @@
     agents: {
       list: function () { return get('/api/v1/agents', true); },
       detail: function (key) { return get('/api/v1/agents/' + key, true); },
+      /* Agent Runtime：该智能体注册的工具清单与审批工具（/agents/{key}/runtime） */
+      runtime: function (key) { return get('/api/v1/agents/' + key + '/runtime', true); },
+      /* 运行指标与成本：按智能体/工具汇总的任务数、成功率、P95（/agent-metrics） */
+      metrics: function () { return get('/api/v1/agent-metrics', true); },
+      /* 运行监控汇总：运行中 / 待接入 / 总数（/analytics/agents/monitor） */
+      monitor: function () { return get('/api/v1/analytics/agents/monitor', true); },
       dispatch: function (text) { return post('/api/v1/agents/dispatch', { text: text }, true); },
       route: function (text, maxAgents) {
         return post('/api/v1/agents/route',
@@ -419,7 +458,9 @@
         fd.append('file', file);
         return request('/api/v1/tongue/upload', { method: 'POST', body: fd, auth: true, timeout: 120000 });
       },
-      detail: function (id) { return get('/api/v1/tongue/' + id, true); }
+      detail: function (id) { return get('/api/v1/tongue/' + id, true); },
+      // 重新排队辨识（上次失败或质量不足时用）。辨识在后台跑，返回后需轮询 detail。
+      recognize: function (id) { return post('/api/v1/tongue/' + id + '/recognize', {}, true); }
     },
 
     /* Q. 打卡 */
@@ -478,7 +519,17 @@
     digitalHuman: {
       config: function () { return get('/api/v1/digital-human/config', true); },
       session: function () { return post('/api/v1/digital-human/session', {}, true); },
-      voiceCommand: function (text) { return post('/api/v1/digital-human/voice-command', { text: text }, true); }
+      voiceCommand: function (text) { return post('/api/v1/digital-human/voice-command', { text: text }, true); },
+      // 上传录音：本地 faster-whisper 转写，单条 10 秒音频在 CPU 上约 3~5 秒，
+      // 首次请求还要加载模型（1~2 秒），所以超时给到 180 秒而不是默认 30 秒。
+      asr: function (fd) {
+        return request('/api/v1/digital-human/asr', { method: 'POST', body: fd, auth: true, timeout: 180000 });
+      },
+      // 语音合成：返回 {blob, truncated, chars}。合成失败抛 ApiError(60008)。
+      tts: function (text, voice, rate) {
+        return blobRequest('/api/v1/digital-human/tts',
+          { text: text, voice: voice || null, rate: rate || '+0%' }, { timeout: 60000 });
+      }
     },
 
     /* 营养师 */

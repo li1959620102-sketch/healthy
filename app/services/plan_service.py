@@ -10,9 +10,11 @@
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from app.core.errors import BizError, ErrCode
+from app.core.rules import check_tongue_image
 from app.dao.assessment_dao import ReportDAO, session_scope
 from app.dao.plan_dao import PlanDAO, TongueDAO
 
@@ -523,20 +525,40 @@ class PlanService:
     @staticmethod
     def upload_tongue(user: dict, file_obj, filename: str,
                       record_id: Optional[int] = None) -> Dict[str, Any]:
-        """上传舌图到对象存储；AI 辨识待 S4 验证后启用（当前 status=uploaded）。"""
+        """上传舌图并建记录；辨识由调用方转后台任务执行（见 `recognize_tongue`）。
+
+        返回值里的 status 是**上传那一刻**的状态，辨识结果是异步产生的：
+        前端拿到 image_id 后轮询 `GET /tongue/{id}`，会看到
+        `uploaded → recognizing → recognized`（或 failed）的真实流转。
+        """
         if not user:
             raise BizError(ErrCode.UNAUTHENTICATED, "请先登录")
+
+        raw = file_obj.read() if hasattr(file_obj, "read") else bytes(file_obj)
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        check = check_tongue_image(filename, len(raw))
+        if not check.ok:
+            raise BizError(ErrCode.PARAM_INVALID, check.message)
+
         url = None
         note = None
         try:
+            import io as _io
+            import uuid as _uuid
+
             from app.utils.minio_client import get_minio
-            url = get_minio().upload_file(file_obj, filename)
-        except Exception as e:
-            # 存储不可用不阻断：仍建记录，标记 failed，便于稍后重试
+
+            # 显式指定对象名：MinIO 默认用原始文件名当 key，两个用户都传
+            # "tongue.jpg" 就会互相覆盖——这是必须避免的串号风险。
+            ext = os.path.splitext(filename or "")[1].lower() or ".jpg"
+            object_name = f"tongue/{user.get('sub')}/{_uuid.uuid4().hex}{ext}"
+            url = get_minio().upload_file(_io.BytesIO(raw), filename, object_name)
+        except Exception as e:                                   # noqa: BLE001
             logger.warning(f"舌图上传对象存储失败：{e}")
             note = f"对象存储不可用：{e}"
-        if not url and not note:
-            note = "对象存储未返回地址"
+
         with session_scope() as s:
             img = TongueDAO.create({
                 "user_id": str(user.get("sub")),
@@ -544,9 +566,92 @@ class PlanService:
                 "image_url": url or "",
                 "status": "failed" if not url else "uploaded",
             }, session=s)
-            return {"image_id": img.id, "image_url": img.image_url, "status": img.status,
-                    "recognizable": False,
-                    "note": note or "AI 辨识待 S4 验证后启用"}
+            return {
+                "image_id": img.id,
+                "image_url": img.image_url,
+                "status": img.status,
+                "recognizable": bool(url),
+                "recognize_endpoint": f"/api/v1/tongue/{img.id}/recognize",
+                "note": note or ("图片已保存，正在辨识" if url else "图片保存失败"),
+            }
+
+    @staticmethod
+    def recognize_tongue(image_id: int, *, force: bool = False) -> Dict[str, Any]:
+        """对已上传的舌图执行一次辨识并落库。
+
+        **自开 session、不依赖请求上下文**——因为它要在后台线程里跑
+        （单张约 30~40 秒，绝不能占着请求）。语义上分三段，每段单独提事务：
+
+          1. 读记录 + 置 recognizing（短事务，立刻提交，前端马上能看到"辨识中"）
+          2. 取图 + 调模型（最慢的一段，**不持有数据库连接**）
+          3. 写结果（短事务）
+
+        失败不吞：任何一步出错都落 status=failed，并把原因写进
+        `recognized_result.error`，前端能显示"为什么没识别出来"。
+        """
+        from app.services import tongue_service
+
+        # —— 段 1：占位，防重复触发 ——
+        with session_scope() as s:
+            img = TongueDAO.get(image_id, session=s)
+            if not img:
+                raise BizError(ErrCode.RESOURCE_NOT_FOUND, "舌象记录不存在")
+            if not img.image_url:
+                TongueDAO.update(image_id, {
+                    "status": "failed",
+                    "recognized_result": {"error": "图片未成功存入对象存储，无法辨识"},
+                }, session=s)
+                return {"image_id": image_id, "status": "failed",
+                        "note": "图片未成功存入对象存储"}
+            if img.status == "recognizing" and not force:
+                return {"image_id": image_id, "status": "recognizing",
+                        "note": "该图片正在辨识中，请稍后查询"}
+            object_name = img.image_url
+            TongueDAO.update(image_id, {"status": "recognizing"}, session=s)
+
+        # —— 段 2：取图 + 辨识（无数据库连接在手上）——
+        try:
+            from app.utils.minio_client import get_minio
+
+            resp = get_minio().get_object(object_name)
+            try:
+                data = resp.read()
+            finally:
+                resp.close()
+                resp.release_conn()
+            result = tongue_service.recognize_bytes(data)
+        except Exception as e:                                   # noqa: BLE001
+            logger.warning(f"舌象辨识失败 image_id={image_id}: {e!r}")
+            with session_scope() as s:
+                TongueDAO.update(image_id, {
+                    "status": "failed",
+                    "recognized_result": {"error": f"{type(e).__name__}: {e}"},
+                }, session=s)
+            return {"image_id": image_id, "status": "failed",
+                    "note": f"辨识失败：{e}"}
+
+        # —— 段 3：落库 ——
+        # 注意状态语义：没看到舌头（visible=false）不是"失败"，是**正常的负结果**，
+        # 所以仍记 recognized，把结论放在结果里，前端才能给出正确引导
+        # （"请重新拍一张"而不是"系统出错了"）。
+        with session_scope() as s:
+            TongueDAO.update(image_id, {
+                "status": "recognized",
+                "recognized_result": result,
+                "model_name": result.get("model"),
+            }, session=s)
+
+        return {
+            "image_id": image_id,
+            "status": "recognized",
+            "visible": result.get("visible"),
+            "sufficient": (result.get("quality") or {}).get("sufficient"),
+            "features": result.get("features"),
+            "observations": result.get("observations"),
+            "confidence": result.get("confidence"),
+            "elapsed_ms": result.get("elapsed_ms"),
+            "note": "辨识完成" if result.get("visible") else "未在照片中检测到可辨认的舌体",
+        }
 
     @staticmethod
     def get_tongue(user: dict, image_id: int) -> Dict[str, Any]:
@@ -555,10 +660,18 @@ class PlanService:
             if not img or (img.user_id and str(img.user_id) != str(user.get("sub"))
                            and user.get("role") not in ("admin", "nutritionist", "dietitian")):
                 raise BizError(ErrCode.RESOURCE_NOT_FOUND, "舌象记录不存在")
+            result = img.recognized_result or {}
             return {"image_id": img.id, "image_url": img.image_url, "status": img.status,
-                    "recognized_result": img.recognized_result, "model_name": img.model_name,
+                    "recognized_result": img.recognized_result,
+                    "model_name": img.model_name,
                     "record_id": img.record_id, "created_at": img.created_at,
-                    "note": "AI 辨识待 S4 验证后启用"}
+                    "recognize_endpoint": f"/api/v1/tongue/{img.id}/recognize",
+                    "note": {
+                        "uploaded": "图片已保存，尚未开始辨识",
+                        "recognizing": "辨识中，请稍候（单张约 30~40 秒）",
+                        "recognized": result.get("disclaimer", "辨识完成"),
+                        "failed": (result.get("error") or "辨识失败，可重新触发"),
+                    }.get(img.status, "")}
 
 
 plan_service = PlanService()

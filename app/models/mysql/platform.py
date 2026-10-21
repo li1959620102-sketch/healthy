@@ -426,6 +426,7 @@ class DataDeletionTask(Base):
     )
     scope = Column(String(64), comment="清理范围 mysql/vector/minio")
     execute_at = Column(DateTime, comment="计划执行时间（注销+15日）")
+    started_at = Column(DateTime, comment="本次执行开始时间（用于识别中途崩溃的任务）")
     finished_at = Column(DateTime, comment="完成时间")
     error = Column(String(500), comment="失败原因")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
@@ -644,6 +645,189 @@ class Text2SqlQuery(Base):
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
 
+# --------------------------------------------------------------------------- #
+# 3.32 运维预警记录（预警求值作业的落地出口）
+#
+# 阈值本身存在 `system_config.alert.thresholds`（可配），本表存的是**求值结果**：
+# 哪一项在什么时候、实际值多少、超过阈值多少、有没有人处理。
+# 没有这张表，"预警"就只是配置页上的一个数字，无法回答"上周到底报过什么"。
+# --------------------------------------------------------------------------- #
+class OpsAlert(Base):
+    __tablename__ = "ops_alert"
+    __table_args__ = (
+        # 同一项同一天只留一条，避免定时作业每小时跑一次就刷一串重复预警
+        UniqueConstraint("alert_key", "dedup_key", name="uk_alert_dedup"),
+        Index("idx_state_created", "state", "created_at"),
+        {"comment": "运维预警记录（阈值命中留痕）"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    alert_key = Column(String(64), nullable=False, comment="阈值键，与 alert.thresholds 一致")
+    dedup_key = Column(String(64), nullable=False, comment="去重键（按天/按对象）")
+    level = Column(Enum("info", "warn", "critical", name="ops_alert_level"),
+                   nullable=False, default="warn", comment="严重程度")
+    title = Column(String(200), nullable=False, comment="预警标题")
+    detail = Column(JSON, comment="求值明细（口径、窗口、命中原因）")
+    value = Column(String(64), comment="实际值")
+    threshold = Column(String(64), comment="阈值")
+    state = Column(Enum("open", "ack", "closed", name="ops_alert_state"),
+                   nullable=False, default="open", comment="状态")
+    acked_by = Column(String(64), comment="确认人")
+    acked_at = Column(DateTime, comment="确认时间")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+
+# --------------------------------------------------------------------------- #
+# 3.33 Agent Runtime 任务、步骤、工具调用、记忆与事件
+# --------------------------------------------------------------------------- #
+class AgentTask(Base):
+    """所有 Agent 共用的任务生命周期表。"""
+    __tablename__ = "agent_task"
+    __table_args__ = (
+        Index("idx_agent_task_user", "user_id", "created_at"),
+        Index("idx_agent_task_status", "status", "updated_at"),
+        Index("idx_agent_task_trace", "trace_id"),
+        {"comment": "Agent 任务生命周期"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, unique=True, comment="任务公开 ID")
+    agent_key = Column(String(64), nullable=False, comment="Agent 标识")
+    parent_task_id = Column(String(64), comment="父任务 ID，主 Agent 委派时使用")
+    user_id = Column(String(64), comment="用户 ID")
+    goal = Column(String(2000), nullable=False, comment="任务目标")
+    status = Column(String(32), nullable=False, default="created", comment="任务状态")
+    current_step = Column(String(128), comment="当前步骤")
+    plan_json = Column(JSON, comment="执行计划快照")
+    context_snapshot_json = Column(JSON, comment="任务上下文快照")
+    result_json = Column(JSON, comment="任务结果")
+    error_code = Column(String(64), comment="错误码")
+    error_message = Column(String(1000), comment="错误信息")
+    retry_count = Column(Integer, nullable=False, default=0, comment="重试次数")
+    max_retries = Column(Integer, nullable=False, default=2, comment="最大重试次数")
+    trace_id = Column(String(64), nullable=False, comment="调用链 ID")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    started_at = Column(DateTime, comment="开始时间")
+    paused_at = Column(DateTime, comment="暂停时间")
+    finished_at = Column(DateTime, comment="结束时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+
+
+class AgentStep(Base):
+    """Agent 任务的可恢复步骤。"""
+    __tablename__ = "agent_step"
+    __table_args__ = (
+        UniqueConstraint("task_id", "step_id", name="uk_agent_step"),
+        Index("idx_agent_step_task", "task_id", "step_order"),
+        {"comment": "Agent 任务步骤"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, comment="任务公开 ID")
+    step_id = Column(String(128), nullable=False, comment="步骤 ID")
+    step_order = Column(Integer, nullable=False, default=0, comment="步骤顺序")
+    action = Column(String(500), nullable=False, comment="动作说明")
+    tool_name = Column(String(128), comment="工具名称")
+    status = Column(String(32), nullable=False, default="pending", comment="步骤状态")
+    input_snapshot = Column(JSON, comment="输入快照")
+    output_snapshot = Column(JSON, comment="输出快照")
+    attempt = Column(Integer, nullable=False, default=0, comment="当前尝试次数")
+    error_code = Column(String(64), comment="错误码")
+    error_message = Column(String(1000), comment="错误信息")
+    started_at = Column(DateTime, comment="开始时间")
+    finished_at = Column(DateTime, comment="结束时间")
+
+
+class AgentToolCall(Base):
+    """每一次工具调用的参数、结果和权限判定。"""
+    __tablename__ = "agent_tool_call"
+    __table_args__ = (
+        Index("idx_agent_tool_task", "task_id", "created_at"),
+        {"comment": "Agent 工具调用审计"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False)
+    step_id = Column(String(128), nullable=False)
+    tool_name = Column(String(128), nullable=False)
+    arguments_json = Column(JSON, comment="工具参数")
+    result_json = Column(JSON, comment="工具结果")
+    permission_result = Column(String(32), nullable=False, default="allowed", comment="权限判定")
+    latency_ms = Column(Integer, comment="调用耗时")
+    model_name = Column(String(128), comment="模型名称（模型工具）")
+    prompt_tokens = Column(Integer, comment="输入 token，未上报时为空")
+    completion_tokens = Column(Integer, comment="输出 token，未上报时为空")
+    total_tokens = Column(Integer, comment="总 token")
+    estimated_cost = Column(DECIMAL(12, 6), comment="估算成本，未上报时为空")
+    success = Column(Boolean, nullable=False, default=False, comment="是否成功")
+    error_message = Column(String(1000), comment="错误信息")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+
+class AgentMemory(Base):
+    """分层 Agent 记忆，明确来源、置信度和过期时间。"""
+    __tablename__ = "agent_memory"
+    __table_args__ = (
+        Index("idx_agent_memory_user", "user_id", "memory_type", "updated_at"),
+        Index("idx_agent_memory_task", "task_id"),
+        {"comment": "Agent 分层记忆"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), comment="用户 ID")
+    task_id = Column(String(64), comment="来源任务 ID")
+    agent_key = Column(String(64), nullable=False, comment="来源 Agent")
+    memory_type = Column(String(32), nullable=False, comment="task/conversation/profile/preference/tool/summary")
+    content_json = Column(JSON, nullable=False, comment="记忆内容")
+    source = Column(String(128), comment="来源")
+    confidence = Column(DECIMAL(5, 4), comment="置信度")
+    expires_at = Column(DateTime, comment="过期时间")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+
+
+class AgentApproval(Base):
+    """高风险 Agent 步骤的人工作业审批。"""
+    __tablename__ = "agent_approval"
+    __table_args__ = (
+        Index("idx_agent_approval_status", "approval_status", "created_at"),
+        Index("idx_agent_approval_task", "task_id"),
+        {"comment": "Agent 人工审批"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    approval_id = Column(String(64), nullable=False, unique=True, comment="审批公开 ID")
+    task_id = Column(String(64), nullable=False)
+    step_id = Column(String(128), nullable=False)
+    approval_type = Column(String(64), nullable=False, comment="审批类型")
+    risk_level = Column(String(32), nullable=False, default="medium", comment="风险等级")
+    approval_status = Column(String(32), nullable=False, default="pending", comment="pending/approved/rejected/expired")
+    requested_by = Column(String(64), comment="请求人")
+    approved_by = Column(String(64), comment="审批人")
+    comment = Column(String(1000), comment="审批意见")
+    expires_at = Column(DateTime, comment="审批过期时间")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    approved_at = Column(DateTime, comment="审批时间")
+
+
+class AgentEvent(Base):
+    """Agent 调用链事件，支持时间线和问题复盘。"""
+    __tablename__ = "agent_event"
+    __table_args__ = (
+        Index("idx_agent_event_trace", "trace_id", "created_at"),
+        Index("idx_agent_event_task", "task_id", "created_at"),
+        {"comment": "Agent 调用链事件"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False)
+    trace_id = Column(String(64), nullable=False)
+    span_id = Column(String(64), comment="调用跨度 ID")
+    event_type = Column(String(64), nullable=False, comment="事件类型")
+    payload_json = Column(JSON, comment="事件数据")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+
 __all__ = [
     "UserProfile", "DietitianProfile", "DietitianCustomer",
     "AssessmentTemplate", "AssessmentRecord", "AssessmentReport", "ReportAnnotation",
@@ -651,5 +835,6 @@ __all__ = [
     "OperationLog", "SystemConfig", "TongueImage", "DietPlan", "DietPlanRecipe",
     "DataDeletionTask", "CheckinRecord", "Notification",
     "BanquetMenu", "BanquetGuest", "TravelPlan",
-    "OcrReport", "OcrIndicator", "DashboardLayout", "Text2SqlQuery",
+    "OcrReport", "OcrIndicator", "DashboardLayout", "Text2SqlQuery", "OpsAlert",
+    "AgentTask", "AgentStep", "AgentToolCall", "AgentMemory", "AgentApproval", "AgentEvent",
 ]

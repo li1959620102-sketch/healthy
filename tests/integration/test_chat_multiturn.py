@@ -38,7 +38,7 @@ def stub_stream(monkeypatch):
 
     captured = []
 
-    async def fake_stream(question, agent="dietitian", history=None):
+    async def fake_stream(question, agent="dietitian", history=None, memory_context=None):
         captured.append({"question": question, "history": list(history or [])})
         yield {"event": "start", "data": {"message_id": None}}
         yield {"event": "delta", "data": {"text": "好的，我来说说。"}}

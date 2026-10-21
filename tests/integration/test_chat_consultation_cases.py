@@ -194,11 +194,20 @@ def test_it_c01b_ready_reports_agent_warmth(api):
 
     state = body["data"]["agent"]["state"]
     assert state in ("warm", "cold", "unavailable"), body["data"]["agent"]
-    # 探针必须是只读的、不能说句话就跑去加载模型
-    assert cost <= 1.0, f"探针耗时 {cost:.2f}s，疑似在探针里做了组件加载"
+    # 探针必须是只读的、不能说句话就跑去加载模型。
+    # 阈值 2.0s：要防的是"探针内部跑组件加载"（那个是 2~3 秒级）；
+    # 早先写 1.0s 在全量用例并发跑时会因整机负载抖动误报——探针本身没变慢，
+    # 是同一台机器上别的用例在抢 CPU。
+    assert cost <= 2.0, f"探针耗时 {cost:.2f}s，疑似在探针里做了组件加载"
     # `ready` 语义不被智能体预热状态影响（仍只表达基础设施依赖）
     assert body["data"]["ready"] is all(
         v == "ok" for v in body["data"]["checks"].values()), body["data"]
+
+    # ASR 状态也必须可见（装没装 / 权重在不在 / 加载没有），同样不能计入 ready
+    asr = body["data"].get("asr")
+    assert asr is not None, body["data"]
+    for key in ("installed", "ready", "loaded", "model", "device", "compute_type"):
+        assert key in asr, asr
 
     svc.prewarm()
     assert api.c.get("/api/v1/ready").json()["data"]["agent"]["state"] == "warm"

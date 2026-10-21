@@ -37,7 +37,7 @@ class Settings:
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
     MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-    MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "vanna-training-data")
+    MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "ai-health-platform")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "False").lower() == "true"
 
     KB_BUCKET_NAME: str = os.getenv("KB_BUCKET_NAME", "")
@@ -96,6 +96,39 @@ class Settings:
 
     # 文件上传（大小上限由 app/utils/file_handler.py 在读取前后各校验一次）
     FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+
+    # 视觉模型（舌象辨识，O 组）：走本机 Ollama 的多模态模型
+    VISION_MODEL: str = os.getenv("VISION_MODEL", "qwen2.5vl:3b")
+    VISION_TIMEOUT: int = int(os.getenv("VISION_TIMEOUT", "180"))   # 单张图辨识超时（秒）
+    VISION_ENABLE: bool = os.getenv("VISION_ENABLE", "true").lower() == "true"
+
+    # 语音识别（ASR，S 组）：faster-whisper 本地推理
+    # 模型名按 CTranslate2 命名（tiny/base/small/medium/large-v3），无 GPU 时用 int8 走 CPU。
+    ASR_MODEL: str = os.getenv("ASR_MODEL", "small")
+    ASR_DEVICE: str = os.getenv("ASR_DEVICE", "cpu")
+    ASR_COMPUTE_TYPE: str = os.getenv("ASR_COMPUTE_TYPE", "int8")
+    ASR_BEAM_SIZE: int = int(os.getenv("ASR_BEAM_SIZE", "1"))
+    # 推理线程数。0 = 让 ctranslate2 自己决定。本机实测 8 线程最快：
+    # 实时率 0.64；调到 16（逻辑核数）反而退化到 0.90——超订线程后
+    # 每个线程分到的缓存变少，int8 矩阵乘的开销全花在切换上。
+    ASR_CPU_THREADS: int = int(os.getenv("ASR_CPU_THREADS", "8"))
+    ASR_MODEL_DIR: str = os.getenv("ASR_MODEL_DIR", os.path.join(BASE_DIR, "models", "whisper"))
+    ASR_MAX_AUDIO_SECONDS: int = int(os.getenv("ASR_MAX_AUDIO_SECONDS", "120"))
+
+    # 定时任务（合规 D2 注销清理 / FR-V-10 预警求值）
+    # 进程内 APScheduler：不存在"crontab 改了但业务不知道"的两处配置问题，
+    # 执行结果可在 GET /api/v1/ops/scheduler 查到。多副本靠 Redis 锁互斥。
+    SCHEDULER_ENABLE: bool = os.getenv("SCHEDULER_ENABLE", "true").lower() == "true"
+    SCHEDULER_TIMEZONE: str = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai")
+    DELETION_PURGE_HOUR: int = int(os.getenv("DELETION_PURGE_HOUR", "3"))
+    ALERT_EVAL_MINUTES: int = int(os.getenv("ALERT_EVAL_MINUTES", "60"))
+    # 告警外发通道（企业微信/钉钉机器人）。留空表示只用站内通知——
+    # 未配置不算失败，但运维必须知道"现在只有站内信这一条通道"。
+    ALERT_WEBHOOK_URL: str = os.getenv("ALERT_WEBHOOK_URL", "")
+
+    # 版本号（上线证据 3：发布记录可追溯）。由镜像/流水线注入，缺省为开发标记。
+    APP_VERSION: str = os.getenv("APP_VERSION", "dev")
+    APP_BUILD: str = os.getenv("APP_BUILD", "")
 
 
 # 创建配置实例

@@ -62,9 +62,6 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-file_handler = logging.FileHandler('ai_health.log', encoding='utf-8')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 # ------------------------------
 # 核心修改：使用 lifespan 替代 on_event
 # ------------------------------
@@ -98,7 +95,27 @@ async def lifespan(app: FastAPI):
         chat_query_service.prewarm()
 
     threading.Thread(target=_prewarm, daemon=True).start()
-    yield
+
+    # 预热语音识别模型。理由与上面同源：small 权重冷加载 2.2 秒，
+    # 若不预热，第一个按麦的用户要替所有人付这笔开销（体感是"识别卡住"）。
+    # 用独立线程而非挂在 `_prewarm` 后面顺序执行：嵌入模型预热本身要数秒，
+    # 串行会把语音入口的就绪时间拖到十几秒；两个模型各占几百 MB，并行无压力。
+    def _prewarm_asr():
+        from app.services.asr_service import asr_service
+        asr_service.warmup()
+
+    threading.Thread(target=_prewarm_asr, daemon=True).start()
+
+    # 定时任务（合规 D2 注销清理 / FR-V-10 预警求值）。
+    # 必须在这里启动而不是 import 期：import 期起线程会让"只是导入 main 做静态检查"
+    # 也拉起调度器；放在 lifespan 里，TestClient 的 with 块退出时会正常停掉。
+    from app.core.scheduler import scheduler as app_scheduler
+
+    app_scheduler.start()
+    try:
+        yield
+    finally:
+        app_scheduler.shutdown()
 
 
 # 创建 FastAPI 实例并绑定生命周期
@@ -153,9 +170,50 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
+
+@app.middleware("http")
+async def static_cache_policy(request: Request, call_next):
+    """前端静态资源的缓存策略。
+
+    默认 StaticFiles 只发 ETag/Last-Modified，不发 Cache-Control，浏览器按启发式规则
+    自行缓存一段时间；结果就是「代码已改、页面还是旧的」，点按钮没反应还以为是逻辑坏了
+    （2026-10-21 用户端咨询面板就踩过这个坑）。
+    这里：HTML 一律不缓存，JS/CSS 每次协商（未改走 304，改了立即生效）。
+    """
+    response = await call_next(request)
+    path = (request.url.path or "").lower()
+    if path.endswith((".js", ".css")):
+        response.headers["Cache-Control"] = "no-cache"
+    elif path.endswith(".html") or path in ("/", ""):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
+
 @app.get("/api/health", summary="服务健康检查", tags=["系统"])
 async def api_health():
     return {"status": "ok", "service": "AI智参（药食同源）健康平台"}
+
+
+# 进程启动时刻：用于回答"这个实例跑了多久"，回滚时也靠它确认新实例真的起来了
+_STARTED_AT = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+@app.get("/api/v1/version", summary="版本与构建信息（上线证据 3）", tags=["系统"])
+def version():
+    """返回版本号、构建号、环境与启动时间。
+
+    版本号由镜像/流水线通过 `APP_VERSION` 注入，不写死在代码里——
+    写死的话"线上跑的是哪个版本"永远只能靠猜。发布记录见 RELEASE_NOTES.md。
+    """
+    from app.core.scheduler import scheduler as _sched
+
+    return success(data={
+        "name": "AI智参（药食同源）健康管理平台",
+        "version": settings.APP_VERSION,
+        "build": settings.APP_BUILD or "local",
+        "env": settings.ENV,
+        "started_at": _STARTED_AT,
+        "scheduler": _sched.status()["running"],
+    })
 
 
 # ------------------------------
@@ -322,9 +380,21 @@ async def ready():
     # 但它必须**可见**——否则运维无从判断"现在打进来的首问会不会吃 2.4s 冷启动"。
     from app.services.chat_query_service import chat_query_service as _chat_svc
     agent_state = _chat_svc.warm_state()
+    # 语音识别状态同理：只读探测，不触发模型加载。
+    # 它决定前端要不要显示麦克风按钮，也决定运维是否需要跑
+    # scripts/download_asr_model.py。装没装、权重在不在、加载没有，三件事分开报。
+    from app.services.asr_service import asr_service as _asr
+    _asr_st = _asr.status()
     return success(data={"ready": all_ok, "checks": checks,
                          "agent": {"state": agent_state,
-                                   "collection": settings.MILVUS_DEFAULT_COLLECTION}})
+                                   "collection": settings.MILVUS_DEFAULT_COLLECTION},
+                         "asr": {"installed": _asr_st["installed"],
+                                 "ready": _asr_st["ready"],
+                                 "loaded": _asr_st["loaded"],
+                                 "model": _asr_st["model"],
+                                 "device": _asr_st["device"],
+                                 "compute_type": _asr_st["compute_type"],
+                                 "load_error": _asr_st["load_error"]}})
 
 # ------------------------------
 # 托管前端静态页面（同源访问，无需跨域）

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.schemas.platform import (
-    RegisterReq, LoginReq, RefreshReq, SmsSendReq, EmailSendReq,
+    RegisterReq, LoginReq, RefreshReq, SmsSendReq, EmailSendReq, PasswordResetReq,
 )
 from app.services.user_service import UserService
 from app.services.sms_service import sms_service
@@ -85,6 +85,14 @@ async def login(body: LoginReq):
         raise
     except Exception as e:
         raise BizError(ErrCode.AUTH_FAILED, str(e))
+
+
+@router.post("/password/reset", summary="验证码重置密码", description="通过手机号短信或邮箱验证码重置密码。")
+async def password_reset(body: PasswordResetReq):
+    try:
+        return success(data=UserService.reset_password(body.identifier, body.verify_code, body.new_password), message="密码已重置")
+    except (BizError, ValueError):
+        raise
 
 
 @router.post("/token/refresh", summary="刷新访问令牌", description="用刷新令牌换取新的访问令牌。")

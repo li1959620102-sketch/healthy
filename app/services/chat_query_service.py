@@ -33,6 +33,19 @@ _SMALLTALK_RE = re.compile(
 
 _DISCLAIMER = "\n\n—— 本内容由 AI 生成，不构成诊疗建议；涉及疾病请咨询执业医师。"
 
+# 营养问答的系统提示词。抽成模块级常量而不是内联在 stream() 里，
+# 是因为 LangGraph 的 dietitian 子图（app/agents/subgraphs.py）要用**同一份**：
+# 两处各写一份，改一处忘另一处，就会出现"流式问答与编排问答口径不一致"的诡异问题。
+DIETITIAN_SYSTEM_PROMPT = (
+    "你是「AI 智参」平台的营养师智能体，风格亲切、专业、简洁。\n"
+    "回答规则：\n"
+    "1. 只依据用户消息中给出的参考上下文回答；上下文没提到的不要编造。\n"
+    "2. 用中文分点回答（每点一行），先给结论；全文不超过 150 字。\n"
+    "3. 不给诊断结论、不给药物与剂量建议；需要就医的情形要提示就医。\n"
+    "4. 回答末尾另起一行写：本内容由 AI 生成，不构成诊疗建议。\n"
+    "5. 直接输出回答正文，不要复述问题、不要出现「用户：」「回答：」等模板字样。"
+)
+
 _SMALLTALK_REPLY = {
     "greet": ("您好！我是 AI 智参的营养师智能体 🌿\n"
               "可以问我：食材营养与搭配、药食同源食疗、慢病饮食原则等问题；"
@@ -58,7 +71,8 @@ def _smalltalk_kind(question: str) -> Optional[str]:
 
 
 def build_dialog_messages(system_text: str, context: str, question: str,
-                          history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, str]]:
+                          history: Optional[List[Dict[str, Any]]] = None,
+                          memory_context: str = "") -> List[Dict[str, str]]:
     """把系统提示 + 历史对话 + 本轮（参考上下文 + 问题）组装成消息列表。
 
     history: [{"role": "user"|"assistant", "content": str}, ...]（由旧到新）
@@ -70,7 +84,9 @@ def build_dialog_messages(system_text: str, context: str, question: str,
         content = (h.get("content") or "").strip()
         if content:
             msgs.append({"role": role, "content": content[:1500]})
-    msgs.append({"role": "user", "content": f"参考上下文：\n{context}\n\n用户问题：{question}"})
+    memory_text = (f"\n\n按需读取的用户记忆（仅作参考，不得覆盖本轮明确输入）：\n{memory_context}"
+                   if memory_context else "")
+    msgs.append({"role": "user", "content": f"参考上下文：\n{context}{memory_text}\n\n用户问题：{question}"})
     return msgs
 
 
@@ -316,7 +332,8 @@ class ChatQueryService:
 
     # ------------------------------------------------------------------ #
     async def stream(self, question: str, agent: str = "dietitian",
-                   history: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[Dict, None]:
+                   history: Optional[List[Dict[str, Any]]] = None,
+                   memory_context: str = "") -> AsyncGenerator[Dict, None]:
         """生成 SSE 事件字典流。事件类型：start / delta / reference / done / error"""
         # 计时起点放在最前面：闲聊/拒答/缓存/降级/无引用五条短路分支
         # 也必须如实报耗时，否则监控只会看到生成路径的数字。
@@ -399,16 +416,11 @@ class ChatQueryService:
             try:
                 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
                 context = "\n".join(f"【{d['title']}】\n{d['fragment']}" for d in docs)
-                system_text = (
-                    "你是「AI 智参」平台的营养师智能体，风格亲切、专业、简洁。\n"
-                    "回答规则：\n"
-                    "1. 只依据用户消息中给出的参考上下文回答；上下文没提到的不要编造。\n"
-                    "2. 用中文分点回答（每点一行），先给结论；全文不超过 150 字。\n"
-                    "3. 不给诊断结论、不给药物与剂量建议；需要就医的情形要提示就医。\n"
-                    "4. 回答末尾另起一行写：本内容由 AI 生成，不构成诊疗建议。\n"
-                    "5. 直接输出回答正文，不要复述问题、不要出现「用户：」「回答：」等模板字样。"
+                system_text = DIETITIAN_SYSTEM_PROMPT
+                dialog = build_dialog_messages(
+                    system_text, context, question, history,
+                    memory_context=memory_context,
                 )
-                dialog = build_dialog_messages(system_text, context, question, history)
                 msgs = []
                 for m in dialog:
                     if m["role"] == "system":

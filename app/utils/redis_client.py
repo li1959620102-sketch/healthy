@@ -121,6 +121,24 @@ class RedisClient:
             self._trip(str(e))
             return False
 
+    def set_nx(self, key: str, value: Any, ttl: int) -> Optional[bool]:
+        """只有键不存在时才写入（分布式锁的原语）。
+
+        返回三态，调用方必须区分：
+          True  —— 抢到锁，可以执行；
+          False —— 锁已被别人持有，本次跳过；
+          None  —— Redis 不可用。**不能当成"没抢到"**，否则 Redis 一挂
+                   定时任务就全部静默停摆；单实例部署时应当放行。
+        """
+        c = self.client()
+        if c is None:
+            return None
+        try:
+            return bool(c.set(key, value, nx=True, ex=ttl))
+        except Exception as e:
+            self._trip(str(e))
+            return None
+
     def incr_with_ttl(self, key: str, ttl: int) -> Optional[int]:
         """计数 +1，首次设置过期；返回计数结果，失败返回 None（调用方按放行处理）。"""
         c = self.client()

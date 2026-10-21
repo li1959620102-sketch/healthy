@@ -1,0 +1,268 @@
+{
+  "suite": "agent-runtime-readiness-v1",
+  "status": "passed",
+  "passed": 10,
+  "total": 10,
+  "checks": [
+    {
+      "name": "agent_contract",
+      "status": "passed",
+      "detail": {
+        "passed": 7,
+        "total": 7
+      }
+    },
+    {
+      "name": "runtime_migrations",
+      "status": "passed",
+      "detail": {
+        "missing": []
+      }
+    },
+    {
+      "name": "tool_registry",
+      "status": "passed",
+      "detail": {
+        "missing_agents": [],
+        "unbound_tools": {}
+      }
+    },
+    {
+      "name": "tool_handler_binding",
+      "status": "passed",
+      "detail": {
+        "unbound_tools": {}
+      }
+    },
+    {
+      "name": "telemetry",
+      "status": "passed",
+      "detail": {
+        "generated_at": 1792312647.2565155,
+        "agents": {},
+        "tools": [],
+        "total_estimated_cost": 0,
+        "cost_basis": "仅统计显式上报的 token/成本；未上报时不伪造精确成本"
+      }
+    },
+    {
+      "name": "cost_budget",
+      "status": "passed",
+      "detail": "已配置单任务成本预算"
+    },
+    {
+      "name": "sandbox_quota",
+      "status": "passed",
+      "detail": {
+        "max_tool_calls": "100",
+        "max_runtime_seconds": "900"
+      }
+    },
+    {
+      "name": "compensation_registry",
+      "status": "passed",
+      "detail": {
+        "path": "D:\\AI_health\\app\\agent_runtime\\compensation.py",
+        "registered": [
+          "data.export",
+          "diet_plan.publish",
+          "health_report.publish",
+          "notification.send"
+        ]
+      }
+    },
+    {
+      "name": "infrastructure_drill",
+      "status": "passed",
+      "detail": {
+        "suite": "agent-infrastructure-drill-v1",
+        "generated_at": 1792311384.3638923,
+        "checks": [
+          {
+            "name": "mysql",
+            "status": "passed",
+            "elapsed_ms": 1318,
+            "detail": {
+              "select_1": 1
+            }
+          },
+          {
+            "name": "redis",
+            "status": "passed",
+            "elapsed_ms": 366,
+            "detail": {
+              "health": "ok"
+            }
+          },
+          {
+            "name": "minio",
+            "status": "passed",
+            "elapsed_ms": 557,
+            "detail": {
+              "bucket": "ai-health-platform"
+            }
+          },
+          {
+            "name": "milvus",
+            "status": "passed",
+            "elapsed_ms": 1589,
+            "detail": {
+              "collection": "ai_health_kb_v1",
+              "exists": true
+            }
+          }
+        ],
+        "passed": true
+      }
+    },
+    {
+      "name": "http_smoke",
+      "status": "passed",
+      "detail": {
+        "suite": "agent-http-smoke-v1",
+        "base_url": "http://127.0.0.1:8021",
+        "generated_at": 1792311416.8729706,
+        "checks": [
+          {
+            "name": "health",
+            "status": "passed",
+            "elapsed_ms": 413,
+            "response": {
+              "status": "ok",
+              "service": "AI智参（药食同源）健康平台"
+            }
+          },
+          {
+            "name": "ready",
+            "status": "passed",
+            "elapsed_ms": 380,
+            "response": {
+              "code": 0,
+              "message": "success",
+              "data": {
+                "ready": true,
+                "checks": {
+                  "mysql": "ok",
+                  "milvus": "ok",
+                  "redis": "ok",
+                  "minio": "ok"
+                },
+                "agent": {
+                  "state": "warm",
+                  "collection": "ai_health_kb_v1"
+                },
+                "asr": {
+                  "installed": false,
+                  "ready": false,
+                  "loaded": false,
+                  "model": "small",
+                  "device": "cpu",
+                  "compute_type": "int8",
+                  "load_error": null
+                }
+              },
+              "request_id": "bbfdc465aacc436b",
+              "page": null
+            }
+          }
+        ],
+        "passed": true
+      }
+    }
+  ],
+  "production_claim_allowed": false,
+  "claim_note": "本报告证明代码、依赖和当前验收环境；真实生产声明仍需目标域名 HTTPS、备份恢复和发布审批证据。",
+  "contract_evaluation": {
+    "suite": "agent-runtime-contract-v1",
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "cases": [
+      {
+        "case_id": "orchestrator.plan",
+        "agent_key": "orchestrator",
+        "goal": "规划用户健康任务",
+        "expected_tool": "agent.delegate",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 3
+      },
+      {
+        "case_id": "assessment.publish",
+        "agent_key": "assessment",
+        "goal": "发布健康报告",
+        "expected_tool": "health_report.publish",
+        "requires_approval": true,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 5
+      },
+      {
+        "case_id": "diet.generate",
+        "agent_key": "diet",
+        "goal": "生成三天食养计划",
+        "expected_tool": "diet_plan.generate",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 6
+      },
+      {
+        "case_id": "dish.search",
+        "agent_key": "dish",
+        "goal": "推荐低敏菜单",
+        "expected_tool": "recipe.search",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 5
+      },
+      {
+        "case_id": "steward.checkin",
+        "agent_key": "steward",
+        "goal": "分析本周打卡",
+        "expected_tool": "checkin.read",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 5
+      },
+      {
+        "case_id": "dietitian.retrieve",
+        "agent_key": "dietitian",
+        "goal": "回答饮食问题",
+        "expected_tool": "knowledge.search",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 7
+      },
+      {
+        "case_id": "data.readonly",
+        "agent_key": "data",
+        "goal": "统计用户活跃度",
+        "expected_tool": "sql.execute_readonly",
+        "requires_approval": false,
+        "passed": true,
+        "reason": "工具已注册且风险策略匹配",
+        "registered_tools": 6
+      }
+    ]
+  },
+  "fault_recovery": {
+    "suite": "agent-runtime-fault-recovery-v1",
+    "retry": {
+      "passed": true,
+      "attempts": 2
+    },
+    "passed": true
+  },
+  "governance_gate": {
+    "passed": true,
+    "blocking_checks": [],
+    "blocking_pending_checks": [],
+    "pending_checks": []
+  }
+}

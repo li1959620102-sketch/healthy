@@ -1,9 +1,15 @@
 # 生产运行时依赖。开发、测试和离线工具依赖仍保留在 requirements.txt。
 aiofiles==25.1.0
+apscheduler==3.11.0
+av==18.1.0
 cryptography==46.0.5
+ctranslate2==4.8.3
+edge-tts==7.3.1
 fastapi==0.133.0
+faster-whisper==1.2.1
 jieba==0.42.1
 langchain==0.3.28
+langgraph==0.2.67
 langchain-community==0.3.31
 langchain-core==0.3.84
 langchain-milvus==0.1.10
@@ -12,6 +18,8 @@ langchain-openai==0.3.0
 minio==7.2.20
 openai==1.109.1
 openpyxl==3.1.5
+httpx==0.28.1
+Pillow==12.2.0
 pydantic==2.12.5
 pymilvus==2.6.9
 PyMySQL==1.1.2

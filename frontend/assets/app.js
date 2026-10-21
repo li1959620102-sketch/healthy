@@ -24,13 +24,14 @@ const DEFAULT_CFG = {
 };
 const TITLES = {
   home: '健康首页', assessment: '健康风险测评', nutrition: '营养师智能体',
-  diet: '食养食疗计划', scenes: '五大健康场景', data: '个人数据分析',
+  diet: '食养食疗计划', reminder: '跟踪提醒', scenes: '五大健康场景', data: '个人数据分析',
   dietitian: '营养师工作台', analytics: 'Text2SQL智能分析',
   admin: '运营可视化大屏', agents: '智能体中心'
 };
 
 let CFG = loadCfg();
 let lastResultRows = [];   // Text2SQL 最近一次结果，用于导出 CSV
+let lastQueryText = '';      // 最近一次受控查询，用于导出智能报告
 let lastAssessment = null; // 最近一次测评结果，用于保存到健康档案
 
 /* ---------------- 通用工具 ---------------- */
@@ -46,34 +47,62 @@ function toast(msg, ms) {
   clearTimeout(window._tt);
   window._tt = setTimeout(() => { t.style.display = 'none'; }, ms || 2600);
 }
-function go(id) {
+/* ---------------- 路由：地址栏 #/屏幕 与内容同步 ----------------
+   此前切屏只改 DOM、不动地址栏，刷新永远回首页、链接也发不出去。
+   现在每屏一个 hash：直接打开/刷新/前进后退都停在同一个屏。 */
+const SCREEN_IDS = ['home', 'assessment', 'nutrition', 'diet', 'reminder', 'scenes',
+  'data', 'dietitian', 'analytics', 'admin', 'agents'];
+let _hashGuard = false;
+
+function hashScreen() {
+  const m = /^#\/?([a-z0-9_-]+)$/i.exec(location.hash || '');
+  const id = m ? m[1].toLowerCase() : '';
+  return SCREEN_IDS.indexOf(id) >= 0 ? id : '';
+}
+function syncHash(id) {
+  const want = '#/' + id;
+  if (location.hash === want) return;
+  _hashGuard = true;          /* 自己写的 hash 不再触发一次路由，避免重复加载 */
+  location.hash = want;
+  setTimeout(function () { _hashGuard = false; }, 0);
+}
+function applyHashRoute() {
+  const id = hashScreen();
+  if (!id) return;
+  go(id, { keepHash: true, keepScroll: true });
+}
+window.addEventListener('hashchange', function () {
+  if (_hashGuard) return;
+  const id = hashScreen();
+  if (id) go(id, { keepHash: true });
+});
+
+function go(id, opts) {
+  opts = opts || {};
+  if (SCREEN_IDS.indexOf(id) < 0) id = 'home';
+  /* 越权兜底：当前角色无权访问的屏，直接落回健康首页（并如实提示） */
+  if (!canSee(id)) {
+    toast('当前身份为' + (ROLE_LABEL[currentRole()] || '访客') + '，无权访问该页面');
+    id = 'home';
+  }
   document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
   const target = document.getElementById(id);
   if (target) target.classList.add('active');
   document.querySelectorAll('.nav a').forEach(x => x.classList.toggle('active', x.dataset.screen === id));
   document.getElementById('pageTitle').textContent = TITLES[id] || 'AI智参';
-  /* 越权兜底：当前角色无权访问的屏，直接落回健康首页（并如实提示） */
-  if (!canSee(id)) {
-    const fallback = 'home';
-    document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
-    const t = document.getElementById(fallback);
-    if (t) t.classList.add('active');
-    document.querySelectorAll('.nav a').forEach(x => x.classList.toggle('active', x.dataset.screen === fallback));
-    document.getElementById('pageTitle').textContent = TITLES[fallback];
-    toast('当前身份为' + (ROLE_LABEL[currentRole()] || '访客') + '，无权访问该页面');
-    if (typeof refreshHome === 'function') refreshHome();
-    return;
-  }
+  if (!opts.keepHash) syncHash(id);
   if (id === 'home') { refreshHome(); }
   if (id === 'data') { loadDataAnalysis(); }
   if (id === 'assessment') { loadTemplates(); loadHistory(); }
   if (id === 'diet') { loadDiet(); }
-  if (id === 'nutrition') { loadHealthContext(); loadContacts(); loadKbInfo(); loadChatHistory(); }
+  if (id === 'reminder') { loadReminder(); }
+  if (id === 'nutrition') { loadHealthContext(); loadContacts(); loadKbInfo(); loadChatHistory(); restoreUserConsult(); }
   if (id === 'dietitian') { loadDietitian(); }
   if (id === 'scenes') { loadScenes(); }
   if (id === 'agents') { loadAgentsPanel(); }
+  if (id === 'analytics') { loadQueryHistory(); }
   if (id === 'admin') { loadOps(); }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (!opts.keepScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /* ---------------- 路由与顶栏 ---------------- */
@@ -82,6 +111,9 @@ function bindNav() {
     a.onclick = () => go(a.dataset.screen);
   });
   document.querySelectorAll('.contact').forEach(c => {
+    /* 已有自己点击行为的（如「AI营养师」切回、咨询记录打开会话）不要覆盖，
+       否则这里只切高亮、把真正的动作吃掉 */
+    if (c.onclick) return;
     c.onclick = () => {
       document.querySelectorAll('.contact').forEach(x => x.classList.remove('active'));
       c.classList.add('active');
@@ -90,19 +122,323 @@ function bindNav() {
 }
 
 /* ---------------- 数字人弹窗 ---------------- */
-function openDigitalHuman() { document.getElementById('dhModal').classList.add('open'); }
-function closeDigitalHuman() { document.getElementById('dhModal').classList.remove('open'); }
+function openDigitalHuman() {
+  document.getElementById('dhModal').classList.add('open');
+  _dhAvatarInit();
+  _dhSetState('idle');
+}
+function closeDigitalHuman() {
+  if (_dhRecorder && _dhRecorder.state === 'recording') { try { _dhRecorder.stop(); } catch (e) {} }
+  if (_dhAvatar) { try { _dhAvatar.stop(); } catch (e) {} }
+  document.getElementById('dhModal').classList.remove('open');
+}
 function goFromModal(id) { closeDigitalHuman(); go(id); }
-function voiceCommand() {
-  toast('识别到语音：“帮我做一个健康风险测评”');
-  setTimeout(() => goFromModal('assessment'), 900);
+
+/* ---------------- 语音输入：真录音 → 本地 ASR ----------------
+   之前这里是 toast 一句假的"识别到语音"，纯演示。现在接的是后端
+   /digital-human/asr（faster-whisper 本地推理），并把 with_answer=true 传上去，
+   一次请求就拿到「识别文本 + 主智能体答案」。
+
+   为什么自己录而不是用浏览器 SpeechRecognition：
+   后者在 Chrome 上要走 Google 的云端识别，健康咨询的语音不该出网；
+   而且 iOS Safari 基本不支持。MediaRecorder 全平台都有，音频留在本机。 */
+var _dhRecorder = null, _dhChunks = [];
+var _dhAvatar = null;         // Canvas 形象实例（懒创建，弹窗关掉不销毁，避免反复重建 AudioContext）
+var _dhLastAnswer = '';       // 最近一次可播报的答案文本
+
+function _dhAvatarInit() {
+  if (_dhAvatar || !window.Avatar) { return; }
+  var cv = document.getElementById('dhAvatar');
+  if (cv) { _dhAvatar = Avatar.create(cv, { width: 140, height: 170 }); }
+}
+
+function _dhSetState(s) { if (_dhAvatar) { _dhAvatar.setState(s); } }
+
+/* 让小智把答案念出来：拿 TTS 的 mp3 交给形象播，口型由音频音量驱动。
+   合成失败要如实说原因——静默什么都不做，用户只会以为按钮坏了。 */
+async function speakAnswer() {
+  if (!_dhLastAnswer) { toast('还没有可以播报的内容'); return; }
+  var btn = document.getElementById('dhSpeakBtn');
+  var old = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '合成中…'; btn.disabled = true; }
+  try {
+    var r = await API.digitalHuman.tts(_dhLastAnswer);
+    _dhAvatarInit();
+    if (_dhAvatar) {
+      _dhSetState('speaking');
+      await _dhAvatar.speak(r.blob);
+      _dhSetState('idle');
+    } else {
+      // 没有 Canvas 支持时退化成普通播放，功能不丢
+      var url = URL.createObjectURL(r.blob);
+      var a = new Audio(url);
+      a.onended = function () { URL.revokeObjectURL(url); };
+      await a.play();
+    }
+    if (r.truncated) { toast('内容较长，只播报了前 500 字'); }
+  } catch (e) {
+    var msg = (e && e.message) || '请稍后重试';
+    toast('语音播报失败：' + msg);
+    _dhSetState('idle');
+  } finally {
+    if (btn) { btn.textContent = old; btn.disabled = false; }
+  }
+}
+
+function _dhButton() { return document.querySelector('#dhModal .hero-actions .btn.primary'); }
+
+function _dhShow(html) {
+  var box = document.getElementById('dhVoiceResult');
+  if (!box) { return; }
+  box.style.display = 'block';
+  box.innerHTML = html;
+}
+
+function _dhBtnLabel(text) {
+  var b = _dhButton();
+  if (b) { b.textContent = text; }
+}
+
+async function voiceCommand() {
+  if (_dhRecorder && _dhRecorder.state === 'recording') {
+    _dhRecorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    toast('当前浏览器不支持录音，请改用 Chrome / Edge');
+    return;
+  }
+  var stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    toast('无法访问麦克风：' + ((e && e.message) || '请检查浏览器麦克风权限'));
+    return;
+  }
+
+  _dhChunks = [];
+  var prefer = 'audio/webm;codecs=opus';
+  var opts = (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(prefer))
+    ? { mimeType: prefer } : undefined;
+  _dhRecorder = new MediaRecorder(stream, opts);
+  _dhRecorder.ondataavailable = function (e) { if (e.data && e.data.size) { _dhChunks.push(e.data); } };
+  _dhRecorder.onstop = function () {
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    var type = _dhRecorder.mimeType || 'audio/webm';
+    var blob = new Blob(_dhChunks, { type: type });
+    _dhBtnLabel('🎙 开始说话');
+    if (!blob.size) { _dhSetState('idle'); _dhShow('没有录到声音，请再试一次。'); return; }
+    _dhSetState('thinking');     // 本地转写在跑，形象要给出"在想"的反馈
+    _dhUploadVoice(blob, type);
+  };
+
+  _dhRecorder.start();
+  _dhSetState('listening');
+  _dhBtnLabel('⏹ 结束并识别');
+  _dhShow('正在录音……说完再点一次按钮。');
+}
+
+async function _dhUploadVoice(blob, type) {
+  var ext = (type.indexOf('mp4') >= 0) ? 'm4a' : 'webm';
+  var fd = new FormData();
+  fd.append('file', new Blob([blob], { type: type }), 'voice.' + ext);
+  fd.append('with_answer', 'true');
+  // 模型已在服务启动时预热，首条与后续识别耗时一致，文案不再提示"首次会慢"。
+  _dhShow('正在识别语音，请稍候……');
+
+  try {
+    var d = await API.digitalHuman.asr(fd);
+    var text = (d && d.text) || '';
+    if (!text) {
+      _dhSetState('idle');
+      _dhShow('没听清，请靠近麦克风再说一次。');
+      return;
+    }
+    var html = '<b>你说：</b>' + text.replace(/[<>&]/g, function (c) {
+      return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c];
+    });
+    var ans = (d.answer && d.answer.summary) || '';
+    if (ans) { html += '<br><br><b>小智：</b>' + ans.replace(/\n/g, '<br>'); }
+    if (d.answer && d.answer.error) {
+      html += '<br><br><span style="color:#b45309">（已识别文字，但生成答案失败：'
+        + d.answer.error + '）</span>';
+    }
+    html += '<br><br><span style="opacity:.65;font-size:12px">识别耗时 ' + (d.elapsed_ms || 0)
+      + 'ms · 模型 ' + (d.model || '') + ' · 语言 ' + (d.language || '自动') + '</span>';
+    _dhShow(html);
+    _dhSetState('idle');
+    // 有答案才给"念一遍"入口；没答案就别给一个点了会报错的按钮
+    _dhLastAnswer = /[\u4e00-\u9fa5a-zA-Z0-9]/.test(ans) ? ans : '';
+    var sb = document.getElementById('dhSpeakBtn');
+    if (sb) { sb.style.display = _dhLastAnswer ? '' : 'none'; }
+  } catch (e) {
+    var msg = (e && e.message) || '请稍后重试';
+    _dhSetState('idle');
+    _dhShow('语音识别失败：' + msg);
+  }
+}
+
+/* ---------------- 舌象辨识（上传 → 后台辨识 → 轮询结果） ----------------
+   辨识在服务端后台跑（单张 30~60 秒），所以上传接口立刻返回 image_id，
+   前端按 5 秒一次的节奏轮询详情，直到 status 变成 recognized / failed。
+
+   注意语义：status=recognized 不等于"识别出舌头"。没拍到舌体时同样是
+   recognized，但 recognized_result.visible=false——这时该引导重拍，
+   而不是显示"系统错误"。 */
+var _tongueImageId = null, _tonguePollTimer = null;
+
+var TONGUE_FIELD_LABELS = {
+  tongue_color: '舌质颜色',
+  coating_color: '舌苔颜色',
+  coating_thickness: '舌苔厚薄',
+  moisture: '润燥',
+  tongue_shape: '舌体形态',
+  teeth_marks: '齿痕',
+  cracks: '裂纹',
+  spots: '瘀点'
+};
+
+var TONGUE_STATUS_TEXT = {
+  uploaded: '待辨识',
+  recognizing: '辨识中',
+  recognized: '已完成',
+  failed: '辨识失败'
+};
+
+function tonguePicked() {
+  var f = document.getElementById('tongueFile').files[0];
+  var hint = document.getElementById('tongueHint');
+  if (!hint) { return; }
+  hint.textContent = f
+    ? ('已选择：' + f.name + '（' + Math.round(f.size / 1024) + ' KB）')
+    : '请选择一张舌象照片。';
+}
+
+function _tongueSetStatus(text, cls) {
+  var el = document.getElementById('tongueStatus');
+  if (!el) { return; }
+  el.textContent = text;
+  el.className = 'badge' + (cls ? ' ' + cls : '');
+}
+
+function _tongueHint(text) {
+  var el = document.getElementById('tongueHint');
+  if (el) { el.textContent = text; }
+}
+
+async function uploadTongue() {
+  var input = document.getElementById('tongueFile');
+  var f = input && input.files ? input.files[0] : null;
+  if (!f) { toast('请先选择一张舌象照片'); return; }
+  if (!getToken()) { toast('请先登录后再上传舌象'); return; }
+
+  var box = document.getElementById('tongueResult');
+  if (box) { box.style.display = 'none'; }
+  _tongueSetStatus('上传中', '');
+  _tongueHint('正在上传……');
+
+  try {
+    var d = await API.tongue.upload(f);
+    _tongueImageId = d.image_id;
+    _tongueSetStatus('辨识中', '');
+    _tongueHint('图片已保存，正在辨识（本机推理，约 30~60 秒，可以先去别处，稍后回来看）。');
+    _tonguePoll(0);
+  } catch (e) {
+    _tongueSetStatus('上传失败', 'red');
+    _tongueHint('上传失败：' + ((e && e.message) || '请稍后重试'));
+  }
+}
+
+async function retryTongue() {
+  if (!_tongueImageId) { return; }
+  try {
+    await API.tongue.recognize(_tongueImageId);
+    _tongueSetStatus('辨识中', '');
+    _tongueHint('已重新排队辨识，请稍候……');
+    _tonguePoll(0);
+  } catch (e) {
+    _tongueHint('重新辨识失败：' + ((e && e.message) || ''));
+  }
+}
+
+function _tonguePoll(n) {
+  if (!_tongueImageId) { return; }
+  if (_tonguePollTimer) { clearTimeout(_tonguePollTimer); }
+  // 最多轮询 40 次 × 5 秒 = 200 秒，够覆盖模型冷启动的最坏情况
+  if (n > 40) {
+    _tongueSetStatus('超时', 'red');
+    _tongueHint('辨识超时，可点「重新辨识」再试一次。');
+    return;
+  }
+  _tonguePollTimer = setTimeout(async function () {
+    var d;
+    try {
+      d = await API.tongue.detail(_tongueImageId);
+    } catch (e) {
+      _tonguePoll(n + 1);
+      return;
+    }
+    if (d.status === 'recognized') { _tongueRender(d); return; }
+    if (d.status === 'failed') {
+      _tongueSetStatus('辨识失败', 'red');
+      _tongueHint('辨识失败：' + ((d.recognized_result && d.recognized_result.error) || '未知原因'));
+      document.getElementById('btnTongueRetry').style.display = '';
+      return;
+    }
+    _tongueSetStatus(TONGUE_STATUS_TEXT[d.status] || d.status, '');
+    _tonguePoll(n + 1);
+  }, 5000);
+}
+
+function _tongueRender(d) {
+  var r = d.recognized_result || {};
+  var box = document.getElementById('tongueResult');
+  var retry = document.getElementById('btnTongueRetry');
+  if (retry) { retry.style.display = ''; }
+
+  if (!r.visible) {
+    _tongueSetStatus('未检出舌体', 'red');
+    _tongueHint('没在照片里找到可辨认的舌体。请正面伸舌、让舌体完整入镜后重新拍一张。'
+      + (r.quality && r.quality.issues && r.quality.issues.length ? '（' + r.quality.issues.join('；') + '）' : ''));
+    if (box) { box.style.display = 'none'; }
+    return;
+  }
+
+  _tongueSetStatus(r.quality && r.quality.sufficient ? '辨识完成' : '辨识完成（质量不足）', '');
+
+  var rows = Object.keys(TONGUE_FIELD_LABELS).map(function (k) {
+    var v = (r.features || {})[k] || '无法判断';
+    var dim = (v === '无法判断') ? ' style="opacity:.55"' : '';
+    return '<tr><td>' + TONGUE_FIELD_LABELS[k] + '</td><td' + dim + '>' + v + '</td></tr>';
+  }).join('');
+
+  var html = '<table><thead><tr><th>特征项</th><th>观察结果</th></tr></thead><tbody>' + rows + '</tbody></table>';
+
+  if (r.observations && r.observations.length) {
+    html += '<div class="note" style="margin-top:10px"><b>直接观察到的：</b>'
+      + r.observations.join('；') + '</div>';
+  }
+  html += '<div class="note">置信度 ' + (r.confidence != null ? r.confidence : '—')
+    + ' · 模型 ' + (r.model || '—')
+    + ' · 耗时 ' + ((r.elapsed_ms || 0) / 1000).toFixed(1) + ' 秒</div>';
+  if (r.disclaimer) { html += '<div class="note">' + r.disclaimer + '</div>'; }
+
+  if (box) {
+    box.style.display = '';
+    box.innerHTML = html;
+  }
+  _tongueHint(r.quality && r.quality.sufficient
+    ? '辨识完成。若需要体质方面的结论，请完成健康风险测评或咨询执业中医师。'
+    : '图片质量不足，结果仅供参考。建议在光线均匀的地方重新拍摄。');
 }
 
 /* ---------------- 接口设置 ---------------- */
 /* 用「文件方式」（file://）双击打开 HTML 时，相对路径请求会变成 file:// 必然失败；
-   这里统一给出"本机后端"的默认地址，让这种打开方式也能正常使用。 */
+   这里统一给出"本机后端"的默认地址，让这种打开方式也能正常使用。
+   端口必须与 main.py 的 uvicorn 监听一致（8018）；此前写的是 8019，
+   导致 file:// 打开时永远连不上后端。 */
 function defaultBase() {
-  return (location.protocol === 'file:') ? 'http://127.0.0.1:8019' : '';
+  return (location.protocol === 'file:') ? 'http://127.0.0.1:8018' : '';
 }
 function loadCfg() {
   let c;
@@ -207,10 +543,10 @@ let CURRENT_USER = null;
 /* 角色 → 显示名 / 可见屏（顶栏只显示本账号角色；侧栏专业端按权限显隐） */
 const ROLE_LABEL = { user: '普通用户', dietitian: '营养师', admin: '管理员', operator: '运营' };
 const ROLE_SCREENS = {
-  user: ['home', 'assessment', 'nutrition', 'diet', 'scenes', 'data', 'agents'],
-  dietitian: ['home', 'assessment', 'nutrition', 'diet', 'scenes', 'data', 'agents', 'dietitian', 'analytics'],
-  admin: ['home', 'assessment', 'nutrition', 'diet', 'scenes', 'data', 'agents', 'dietitian', 'analytics', 'admin'],
-  operator: ['home', 'assessment', 'nutrition', 'diet', 'scenes', 'data', 'agents', 'dietitian', 'analytics', 'admin']
+  user: ['home', 'assessment', 'nutrition', 'diet', 'reminder', 'scenes', 'data', 'agents'],
+  dietitian: ['home', 'assessment', 'nutrition', 'diet', 'reminder', 'scenes', 'data', 'agents', 'dietitian', 'analytics'],
+  admin: ['home', 'assessment', 'nutrition', 'diet', 'reminder', 'scenes', 'data', 'agents', 'dietitian', 'analytics', 'admin'],
+  operator: ['home', 'assessment', 'nutrition', 'diet', 'reminder', 'scenes', 'data', 'agents', 'dietitian', 'analytics', 'admin']
 };
 function currentRole() { return (CURRENT_USER && CURRENT_USER.role) || ''; }
 function canSee(screen) {
@@ -303,9 +639,14 @@ function afterLogin(data) {
   CURRENT_USER = data.user;
   updateAuthUI();
   toast('登录成功：' + (data.user.real_name || data.user.username));
-  /* 按服务端返回的真实角色路由落地屏（与登录页所选身份可不同） */
+  /* 有 #/屏幕 时优先落到用户要的那一屏（分享链接/刷新场景），否则按角色落地 */
+  const want = hashScreen();
   const role = data.user.role || 'user';
-  go(role === 'admin' ? 'admin' : (role === 'dietitian' ? 'dietitian' : 'home'));
+  if (want && canSee(want)) {
+    go(want);
+  } else {
+    go(role === 'admin' ? 'admin' : (role === 'dietitian' ? 'dietitian' : 'home'));
+  }
   onLoginChanged();
 }
 
@@ -321,6 +662,41 @@ function switchLoginTab(t) {
   document.getElementById('tabEmail').classList.toggle('active', t === 'email');
   document.getElementById('tabAccount').classList.toggle('active', t === 'account');
   document.getElementById('loginErr').textContent = '';
+}
+
+/* 登录 / 注册两种模式：登录只需要「账号 + 密码」，验证码与姓名只在注册时出现。
+   此前三段表单全量常驻，登录用户在验证码框前不知道该不该填，
+   而"立即注册"一按就直接报"请输入 6 位验证码"——因为框根本看不见。 */
+function setLoginMode(mode) {
+  LOGIN_UI.mode = (mode === 'register') ? 'register' : 'login';
+  const reg = LOGIN_UI.mode === 'register';
+  ['rowCode', 'rowEmailCode'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = reg ? '' : 'none';
+  });
+  ['lgName', 'egName'].forEach(function (id) {
+    const el = document.getElementById(id);
+    const field = el && el.closest ? el.closest('.lp-field') : null;
+    if (field) field.style.display = reg ? '' : 'none';
+  });
+  const main = document.querySelector('#loginPage .hero-actions .btn.primary');
+  const alt = document.querySelector('#loginPage .hero-actions .btn:not(.primary)');
+  if (main) {
+    main.textContent = reg ? '注 册' : '登 录';
+    main.onclick = reg ? doRegister : doLogin;
+  }
+  if (alt) {
+    alt.textContent = reg ? '已有账号？返回登录' : '没有账号？立即注册';
+    alt.onclick = function () { setLoginMode(reg ? 'login' : 'register'); };
+  }
+  const err = document.getElementById('loginErr');
+  if (err) err.textContent = '';
+  const hint = document.getElementById('loginHint');
+  if (hint) {
+    hint.textContent = reg
+      ? '注册后请记好密码。验证码 6 位、5 分钟内有效；同一号码 60 秒内只能获取一次。'
+      : '输入已注册的账号与密码登录。忘记密码可点右侧「忘记密码？」用手机号或邮箱重置。';
+  }
 }
 
 /* 密码明文/密文切换 */
@@ -783,11 +1159,21 @@ let AS = {
   page: 1, pageSize: 8
 };
 
+/* 三步流程条与内容区联动：内容区切换的同时，上方步骤条标出当前步骤、
+   已完成的步骤置为 done（圆圈变绿）。此前进度只体现在标题文字"①②③"里。 */
 function showStep(which) {
-  ['asStepPick', 'asStepQuiz', 'asStepReport'].forEach(function (id) {
+  const order = ['asStepPick', 'asStepQuiz', 'asStepReport'];
+  order.forEach(function (id) {
     const el = document.getElementById(id);
     if (el) { el.style.display = (id === which) ? '' : 'none'; }
   });
+  const cur = order.indexOf(which);
+  const items = document.querySelectorAll('#assessSteps .stage-item');
+  for (let i = 0; i < items.length; i++) {
+    const idx = order.indexOf(items[i].getAttribute('data-step'));
+    items[i].classList.toggle('active', idx === cur);
+    items[i].classList.toggle('done', idx >= 0 && idx < cur);
+  }
 }
 function setBadge(txt, cls) {
   const el = document.getElementById('assessBadge');
@@ -1166,44 +1552,80 @@ function startNewAssessment() {
 }
 
 /* ---------------- 我的测评记录 ---------------- */
+/* 同一份数据要同时填进两个容器：测评页的表格区和「个人数据分析」页。
+   此前两处都写了 id="historyBox"，getElementById 只返回第一个，
+   导致个人数据分析页那段永远停在"加载中…"。 */
 async function loadHistory() {
-  const box = document.getElementById('historyBox');
-  if (!box) { return; }
+  const boxes = ['historyBox', 'dataHistoryBox']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  if (!boxes.length) { return; }
+  const paint = (html) => boxes.forEach(b => { b.innerHTML = html; });
   if (!getToken()) {
-    box.innerHTML = '<div class="desc">登录后可查看我的测评记录</div>';
+    paint('<div class="empty sm">登录后可查看我的测评记录</div>');
     return;
   }
-  box.innerHTML = '<div class="desc">加载中…</div>';
+  paint('<div class="empty sm">加载中…</div>');
   try {
     const d = await API.assessments.list({ limit: 20 });
     const items = (d && d.items) || [];
     if (!items.length) {
-      box.innerHTML = '<div class="desc">暂无测评记录，选一个模板开始吧</div>';
+      paint('<div class="empty sm">暂无测评记录，选一个模板开始吧</div>');
       return;
     }
-    let html = '<table class="table"><thead><tr><th>发起时间</th><th>状态</th><th>进度</th>' +
-      '<th>得分</th><th>等级</th><th>报告</th></tr></thead><tbody>';
+    let html = '<table class="table"><thead><tr><th class="nowrap">发起时间</th><th>状态</th>' +
+      '<th>进度</th><th class="num">得分</th><th>等级</th><th>报告</th></tr></thead><tbody>';
     items.forEach(function (r) {
       const lv = r.level || '';
-      html += '<tr><td>' + esc(r.started_at || '-') + '</td>' +
+      html += '<tr><td class="nowrap">' + esc(r.started_at || '-') + '</td>' +
         '<td>' + esc(STATUS_TEXT[r.status] || r.status || '-') + '</td>' +
         '<td>' + esc(r.progress || '-') + '</td>' +
-        '<td><b>' + (r.score == null ? '-' : esc(r.score)) + '</b></td>' +
+        '<td class="num"><b>' + (r.score == null ? '-' : esc(r.score)) + '</b></td>' +
         '<td><span class="badge ' + (LEVEL_CLASS[lv] || '') + '">' + esc(LEVEL_TEXT[lv] || lv || '-') +
         '</span></td>' +
         '<td>' + (r.report_id ? ('#' + esc(r.report_id)) : '-') + '</td></tr>';
     });
     html += '</tbody></table>';
-    box.innerHTML = html;
+    paint(html);
   } catch (e) {
-    box.innerHTML = '<div class="desc">加载失败：' + esc(e.message) + '</div>';
+    paint('<div class="empty sm">加载失败：' + esc(e.message) + '</div>');
   }
 }
 /* ---------------- Text2SQL 智能分析 ---------------- */
+/* 历史提问取真实查询记录（含 SQL 与行数，便于审计）；不再写死示例列表 */
+async function loadQueryHistory() {
+  const box = document.getElementById('queryHistory');
+  if (!box) return;
+  box.innerHTML = '<div class="desc">加载中…</div>';
+  try {
+    const d = await API.analytics.history(20);
+    const items = (d && d.items) || [];
+    if (!items.length) {
+      box.innerHTML = '<div class="desc">还没有查询记录。执行一次查询后，会按时间倒序出现在这里。</div>';
+      return;
+    }
+    box.innerHTML = items.map(function (q) {
+      const ok = q.status === 'success' || q.status === 'ok';
+      const label = ok ? '成功' : (q.status === 'failed' ? '失败' : (q.status || '—'));
+      return '<div class="query-item" data-q="' + esc(q.question) + '" onclick="pickQuery(this)">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px">' +
+        '<b style="font-weight:600">' + esc(q.question) + '</b>' +
+        '<span class="badge' + (ok ? ' green' : '') + '" style="flex-shrink:0">' +
+        esc(label) + '</span></div>' +
+        '<div class="desc" style="margin-top:4px">' +
+        (q.row_count == null ? '—' : q.row_count + ' 行') + ' · ' + esc(q.created_at || '—') +
+        '</div></div>';
+    }).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="desc">' +
+      esc(e.code === 10001 ? '登录后可查看历史提问' : e.message) + '</div>';
+  }
+}
+
 function pickQuery(el) {
   document.querySelectorAll('.query-item').forEach(x => x.classList.remove('active'));
   el.classList.add('active');
-  document.getElementById('queryInput').value = el.textContent.trim();
+  document.getElementById('queryInput').value = el.dataset.q || el.textContent.trim();
 }
 
 function renderTable(rows) {
@@ -1244,6 +1666,7 @@ function renderChart(rows) {
 
 async function runQuery() {
   const q = (document.getElementById('queryInput').value || '').trim();
+  lastQueryText = q;
   if (!q) { toast('请输入查询问题'); return; }
   const btn = document.getElementById('btnQuery');
   const errBox = document.getElementById('queryErr');
@@ -1480,12 +1903,12 @@ async function loadClients() {
       body.innerHTML = items.map(function (c) {
         const lv = c.latest_level || '';
         const tags = (c.tags && c.tags.length) ? c.tags.join(' · ') : (c.diet_preference || '-');
-        return '<tr><td>' + esc(c.customer_id || '-') + '</td>' +
+        return '<tr><td class="nowrap">' + esc(c.customer_id || '-') + '</td>' +
           '<td>' + esc(tags) + '</td>' +
           '<td>' + (c.latest_score == null ? '-' : esc(c.latest_score)) + ' / ' + esc(LEVEL_TEXT[lv] || lv || '-') + '</td>' +
           '<td><span class="badge ' + (LEVEL_CLASS[lv] || '') + '">' + esc(LEVEL_TEXT[lv] || '-') + '</span></td>' +
           '<td>' + (c.execution_rate == null ? '-' : (esc(c.execution_rate) + '%')) + '</td>' +
-          '<td>' + esc(c.last_consult_at || '-') + '</td>' +
+          '<td class="nowrap">' + esc(c.last_consult_at || '-') + '</td>' +
           "<td><button class=\"btn\" onclick=\"go('nutrition')\">进入咨询</button></td></tr>";
       }).join('');
     }
@@ -1643,7 +2066,7 @@ async function loadClients(level) {
           '<td>' + (c.latest_score == null ? '-' : esc(c.latest_score)) + ' / ' + esc(LEVEL_TEXT[lv] || lv || '-') + '</td>' +
           '<td><span class="badge ' + (LEVEL_CLASS[lv] || '') + '">' + esc(LEVEL_TEXT[lv] || '-') + '</span></td>' +
           '<td>' + (c.execution_rate == null ? '-' : (esc(c.execution_rate) + '%')) + '</td>' +
-          '<td>' + esc(c.last_consult_at || '-') + '</td>' +
+          '<td class="nowrap">' + esc(c.last_consult_at || '-') + '</td>' +
           '<td><button class="btn" onclick="openCustomerReports(\'' + uid + '\')">查看报告</button> ' +
           '<button class="btn" onclick="unbindCustomer(\'' + uid + '\')">解除绑定</button></td></tr>';
       }).join('');
@@ -1747,11 +2170,11 @@ async function loadMyTemplates() {
       const canEdit = (t.status === 'draft');
       const remark = (t.audit_remark && t.status === 'draft')
         ? '<div class="desc" style="font-size:11px;color:var(--red)">审核意见：' + esc(t.audit_remark) + '</div>' : '';
-      return '<tr><td>' + esc(t.code) + '</td><td>' + esc(t.name) + remark + '</td><td>' + esc(t.type) + '</td>' +
-        '<td>v' + esc(t.version) + '</td>' +
+      return '<tr><td class="nowrap">' + esc(t.code) + '</td><td>' + esc(t.name) + remark + '</td><td>' + esc(t.type) + '</td>' +
+        '<td class="nowrap">v' + esc(t.version) + '</td>' +
         '<td><span class="badge ' + (TPL_STATUS_CLASS[t.status] || '') + '">' + esc(st) + '</span></td>' +
-        '<td>' + esc((t.updated_at || t.created_at || '-')) + '</td>' +
-        '<td>' + (canEdit ? '<button class="btn" onclick="openTemplateForm(' + esc(t.id) + ')">编辑</button> ' : '') +
+        '<td class="nowrap">' + esc((t.updated_at || t.created_at || '-')) + '</td>' +
+        '<td class="nowrap">' + (canEdit ? '<button class="btn" onclick="openTemplateForm(' + esc(t.id) + ')">编辑</button> ' : '') +
         (t.status === 'draft'
           ? '<button class="btn primary" onclick="submitTemplateAudit(' + esc(t.id) + ')">提交审核</button> ' : '') +
         '<button class="btn" onclick="openTemplateVersions(' + esc(t.id) + ')">版本</button></td></tr>';
@@ -1962,6 +2385,69 @@ async function loadKbInfo() {
   }
 }
 
+/* ---------------- 可用导出与运行监控 ---------------- */
+async function generateSmartReport() {
+  if (!requireLogin()) return;
+  if (lastQueryText) {
+    try {
+      const d = await API.analytics.exportReport(lastQueryText, 'csv');
+      const url = d && (d.url || d.download_url || d.signed_url);
+      if (url) { window.open(url, '_blank'); toast('智能报告已生成，正在打开下载'); }
+      else toast('报告已生成，但下载地址暂不可用');
+    } catch (e) { toast('生成报告失败：' + (e.message || '请稍后重试')); }
+    return;
+  }
+  if (AS.reportId) { await downloadReportPdf(); return; }
+  toast('请先完成一次测评或执行一次数据查询');
+}
+async function downloadReportPdf() {
+  if (!AS.reportId) { toast('请先完成并生成测评报告'); return; }
+  try {
+    const r = await fetch(location.origin + API.reports.pdfUrl(AS.reportId), { headers: { Authorization: 'Bearer ' + getToken() } });
+    if (!r.ok) throw new Error('报告下载失败（HTTP ' + r.status + '）');
+    const blob = await r.blob(); const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'health-report-' + AS.reportId + '.pdf'; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000); toast('PDF 报告已下载');
+  } catch (e) { toast(e.message || '报告下载失败'); }
+}
+function downloadChart() {
+  if (!lastResultRows.length) { toast('请先执行查询再下载图表'); return; }
+  const cols = Object.keys(lastResultRows[0]); const label = cols[0];
+  const num = cols.find(c => lastResultRows.some(r => typeof r[c] === 'number')) || cols[1];
+  const vals = lastResultRows.map(r => Number(r[num]) || 0); const max = Math.max.apply(null, vals.concat([1]));
+  const bars = vals.map(function(v,i){ const h=Math.max(4,Math.round(v/max*180)); return '<rect x="'+(30+i*40)+'" y="'+(210-h)+'" width="24" height="'+h+'" fill="#a33b2e"><title>'+esc(lastResultRows[i][label])+': '+v+'</title></rect>'; }).join('');
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+(60+vals.length*40)+'" height="240"><rect width="100%" height="100%" fill="#fffaf2"/><text x="20" y="20" font-size="14">'+esc(num)+'</text>'+bars+'</svg>';
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})); a.download='analysis-chart.svg'; a.click(); toast('图表已下载');
+}
+async function openAgentMonitor() {
+  if (!requireLogin()) return;
+  try { const d = await API.agents.monitor(); const ok = d && d.running != null ? d.running : ((d && d.items) || []).filter(x=>x.status==='running').length; toast('智能体监控：'+ok+' 个运行中'); window.open('/ops.html','_blank'); }
+  catch(e) { toast('监控加载失败：'+(e.message||'请稍后重试')); }
+}
+async function switchToHumanConsult() {
+  if (!requireLogin()) return;
+  const q=(document.getElementById('chatInput')&&document.getElementById('chatInput').value.trim()) || '我希望获得人工营养师帮助';
+  try {
+    /* 已有进行中的咨询就直接回到那条，不重复建单（跟普通聊天窗口一致） */
+    const cur = await API.consultations.list({ limit: 10 });
+    const open = ((cur && cur.items) || []).filter(function (c) {
+      return c.status === 'pending' || c.status === 'active';
+    })[0];
+    if (open) {
+      go('nutrition');
+      await openUserConsult(open.consultation_id);
+      return;
+    }
+    const d=await API.consultations.create({question:q,type:'manual'});
+    toast('已提交人工咨询，正在等待营养师接入');
+    go('nutrition');
+    await loadContacts();
+    /* 直接把刚建好的这条会话打开，用户不必再去左栏找 */
+    if (d && d.consultation_id) await openUserConsult(d.consultation_id);
+  }
+  catch(e) { toast('提交人工咨询失败：'+(e.message||'请稍后重试')); }
+}
+
 /* ---------------- 初始化 ---------------- */
 /* 问候语：按本地时间 + 当前登录用户（未登录显示「访客」，不再写死姓名） */
 function greet() {
@@ -1981,12 +2467,24 @@ function greet() {
    ---------------------------------------------------------- */
 function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 
+/* 首页评分圆环：弧长必须跟着真实分数走。
+   此前 CSS 里把角度写死 72%，中间数字是真实分数、弧长却从不变，
+   40 分的用户也看到"看起来 72% 健康"的圆环，属于视觉撒谎。
+   拿不到数值（未登录 / 接口失败）时归零，不留一个假进度。 */
+function setRingPct(pct) {
+  const ring = document.querySelector('#home .ring');
+  if (!ring) return;
+  const n = Number(pct);
+  ring.style.setProperty('--pct', Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0);
+}
+
 async function refreshHome() {
   greet();
   const blanks = ['kpiIndex', 'kpiCheckin', 'kpiRisk', 'kpiPlan',
     'kpiIndexSub', 'kpiCheckinSub', 'kpiRiskSub', 'kpiPlanSub', 'homeScore'];
   if (!getToken()) {
     blanks.forEach(i => setText(i, '—'));
+    setRingPct(null);
     const ms = document.getElementById('homeMetrics');
     if (ms) ms.innerHTML = '<div class="desc">登录并完成一次测评后，这里显示各维度得分。</div>';
     const rs = document.getElementById('homeRisks');
@@ -1997,6 +2495,7 @@ async function refreshHome() {
     const d = await API.dashboard.overview();
     const idx = d.health_index == null ? '—' : String(d.health_index);
     setText('kpiIndex', idx);
+    setRingPct(d.health_index);
     setText('kpiCheckin', d.checkin_text
       || (d.checkin ? (d.checkin.week_checked + ' / ' + d.checkin.week_total) : '—'));
     setText('kpiRisk', d.risk_count == null ? '—' : String(d.risk_count));
@@ -2009,6 +2508,7 @@ async function refreshHome() {
     setText('kpiPlanSub', d.plan ? ('第 ' + (d.plan.week_no || 1) + ' 周') : '尚未生成');
   } catch (e) {
     blanks.forEach(i => setText(i, '—'));
+    setRingPct(null);
   }
   loadHomeMetrics();
   loadHomeRisks();
@@ -2086,7 +2586,13 @@ async function loadHealthContext() {
   }
 }
 
-/* 营养师智能体左栏：咨询记录（真实咨询会话） */
+/* 营养师智能体左栏：咨询记录（真实咨询会话）
+ * 2026-10-21：此前只渲染一行不可点的摘要，用户端根本看不到营养师回复——
+ * 消息本身是落库的（consultation_message），缺的是用户侧会话界面。
+ * 现在每条记录可点开，见下方「用户端人工咨询会话面板」。 */
+const UC_STATUS_TEXT = { pending: '待接入', active: '进行中', closed: '已结束', timeout: '已超时' };
+const UC = { id: null, status: '', timer: null, tick: 0, lastSig: '', rated: false };
+
 async function loadContacts() {
   const box = document.getElementById('contactList');
   if (!box) return;
@@ -2096,17 +2602,219 @@ async function loadContacts() {
     const items = (d && d.items) || [];
     box.innerHTML = items.length
       ? items.map(function (c) {
-        const name = c.dietitian_name || c.dietitian_id || '营养师';
-        return '<div class="contact"><div class="avatar-mini">' + esc(String(name).slice(0, 1)) +
-          '</div><div><b>' + esc(name) + '</b><div class="desc">' +
-          esc((c.status || '') + (c.created_at ? ' · ' + String(c.created_at).slice(0, 10) : '')) +
+        const name = c.dietitian_id ? '已接入营养师' : '待分配营养师';
+        const initial = c.dietitian_id ? '师' : '待';
+        const st = UC_STATUS_TEXT[c.status] || c.status || '';
+        const active = (UC.id === c.consultation_id) ? ' active' : '';
+        const badge = (c.status === 'active' || c.status === 'pending')
+          ? ' <span class="badge green">' + esc(st) + '</span>'
+          : ' <span class="badge">' + esc(st) + '</span>';
+        const when = c.created_at ? String(c.created_at).replace('T', ' ').slice(5, 16) : '';
+        return '<div class="contact' + active + '" style="cursor:pointer" onclick="openUserConsult(' +
+          c.consultation_id + ')" title="点击查看会话记录"><div class="avatar-mini">' +
+          initial + '</div><div><b>' + esc(name) + badge +
+          '</b><div class="desc">#' + c.consultation_id + (when ? ' · ' + esc(when) : '') +
           '</div></div></div>';
       }).join('')
-      : '<div class="desc" style="padding:6px 8px">暂无人工咨询记录</div>';
+      : '<div class="desc" style="padding:6px 8px">暂无人工咨询记录，点右上方「切换人工咨询」发起</div>';
   } catch (e) {
     box.innerHTML = '<div class="desc" style="padding:6px 8px">' +
       esc(e.code === 10001 ? '登录后可查看咨询记录' : ('加载失败：' + e.message)) + '</div>';
   }
+}
+
+/* ---------------- 用户端：人工咨询会话面板 ----------------
+ * 与 AI 咨询共用中间的对话区：点左栏「咨询记录」直接切换视图（不弹窗），
+ * 点「AI营养师」或右上角「返回AI咨询」切回。
+ * 打开 → 拉消息 → 4s 轮询（营养师回复自动出现）→ 发送 / 结束 / 评价。
+ * 只调用既有接口：GET/POST /consultations/{id}/messages、/close、/rating。
+ */
+function showUserConsultView(on) {
+  const ai = document.getElementById('aiChatView');
+  const hu = document.getElementById('humanChatView');
+  if (ai) ai.hidden = !!on;
+  if (hu) hu.hidden = !on;
+  const aiItem = document.getElementById('aiContactItem');
+  if (aiItem) aiItem.classList.toggle('active', !on);
+  const mode = document.getElementById('chatMode');
+  if (mode) mode.textContent = on ? '人工咨询' : 'AI咨询';
+}
+
+/* Enter 发送、Shift+Enter 换行；输入法组合态下的 Enter 不拦（否则选词就发出去了） */
+function ucKeydown(e) {
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  if (e.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  sendUserConsultMsg();
+}
+
+/* 切回营养屏时恢复上次打开的会话（刷新/切屏后仍停在同一条，跟普通聊天窗口一致） */
+async function restoreUserConsult() {
+  if (UC.id) return;
+  const sid = parseInt(sessionStorage.getItem('uc_last_id') || '0', 10);
+  if (!sid || !getToken()) return;
+  try {
+    const d = await API.consultations.list({ limit: 50 });
+    if (UC.id) return;  /* 期间用户已经打开了别的会话，就不覆盖 */
+    const hit = ((d && d.items) || []).some(function (x) { return x.consultation_id === sid; });
+    if (hit) await openUserConsult(sid);
+    else sessionStorage.removeItem('uc_last_id');
+  } catch (e) { /* 恢复失败就停在 AI 视图，不打扰用户 */ }
+}
+
+async function openUserConsult(id) {
+  if (!requireLogin()) return;
+  UC.id = id; UC.tick = 0; UC.lastSig = ''; UC.status = ''; UC.rated = false;
+  try { sessionStorage.setItem('uc_last_id', String(id)); } catch (e) {}
+  setText('ucTitle', '人工咨询 #' + id);
+  setText('ucSub', '正在加载…');
+  const box = document.getElementById('ucMsgs');
+  if (box) box.innerHTML = '<div class="desc">加载中…</div>';
+  const input = document.getElementById('ucInput');
+  if (input) input.value = '';
+  showUserConsultView(true);
+  await refreshUserConsult(true);
+  startUserConsultPolling();
+  await loadContacts();
+}
+
+function startUserConsultPolling() {
+  stopUserConsultPolling();
+  UC.timer = setInterval(function () { refreshUserConsult(false); }, 4000);
+}
+
+function stopUserConsultPolling() {
+  if (UC.timer) { clearInterval(UC.timer); UC.timer = null; }
+}
+
+async function refreshUserConsult(force) {
+  if (!UC.id) return;
+  try {
+    const d = await API.consultations.messages(UC.id);
+    const items = (d && d.items) || [];
+    /* 用「条数:最后一条 id」判重，避免每次轮询把已滚动位置重置 */
+    const sig = items.length + ':' + (items.length ? items[items.length - 1].id : 0);
+    const changed = (sig !== UC.lastSig);
+    if (force || changed) {
+      UC.lastSig = sig;
+      const box = document.getElementById('ucMsgs');
+      if (box) {
+        box.innerHTML = items.length
+          ? items.map(renderUserMsg).join('')
+          : '<div class="desc">暂无消息</div>';
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+    UC.tick++;
+    /* 状态同步时机：首次打开、以及「刚收到新消息」时立刻同步，
+       否则营养师接入后上方还会显示"待接入"（最长要等到第 3 次轮询）。
+       兜底每 3 次也同步一次（覆盖没有新消息、但状态被超时清扫的情况）。 */
+    if (force || changed || UC.tick % 3 === 0) await syncUserConsultStatus();
+  } catch (e) {
+    const box = document.getElementById('ucMsgs');
+    if (box && force) {
+      box.innerHTML = '<div class="desc">加载失败：' +
+        esc(e.code === 10001 ? '登录状态已失效，请重新登录' : (e.message || '')) + '</div>';
+    }
+  }
+}
+
+function renderUserMsg(m) {
+  const who = { user: '我', dietitian: '营养师', system: '系统' }[m.sender_type] || m.sender_type;
+  const cls = m.sender_type === 'user' ? 'me' : (m.sender_type === 'system' ? 'sys' : 'user');
+  const tag = m.ai_assisted ? ' <span class="badge">AI 辅助</span>' : '';
+  const t = m.created_at
+    ? '<span class="desc" style="font-size:11px;margin-left:6px">' +
+      esc(String(m.created_at).replace('T', ' ').slice(11, 16)) + '</span>'
+    : '';
+  return '<div class="dt-msg ' + cls + '"><span class="who">' + who + tag + '</span>' +
+    '<span class="body">' + esc(m.content) + '</span>' + t + '</div>';
+}
+
+/* 状态同步：决定「待接入」提示、已结束禁用输入、可评价与否 */
+async function syncUserConsultStatus() {
+  if (!UC.id) return;
+  try {
+    const d = await API.consultations.list({ limit: 50 });
+    const c = ((d && d.items) || []).filter(function (x) { return x.consultation_id === UC.id; })[0];
+    if (!c) return;
+    const prev = UC.status;
+    UC.status = c.status;
+    UC.rated = (c.rating != null);
+    const st = UC_STATUS_TEXT[c.status] || c.status || '';
+    const who = c.dietitian_id ? '已接入营养师' : '待分配营养师';
+    setText('ucSub', who + ' · ' + st + (c.rating != null ? (' · 已评价 ' + c.rating + ' 分') : ''));
+    const hint = document.getElementById('ucPendingHint');
+    if (hint) hint.style.display = (c.status === 'pending') ? '' : 'none';
+    const closed = (c.status === 'closed' || c.status === 'timeout');
+    const input = document.getElementById('ucInput');
+    if (input) {
+      input.disabled = closed;
+      input.placeholder = closed ? '本次咨询已结束，如需继续请重新发起' : '输入消息…（Enter 发送，Shift+Enter 换行）';
+    }
+    const sendBtn = document.getElementById('ucSendBtn');
+    if (sendBtn) sendBtn.disabled = closed;
+    const endBtn = document.getElementById('ucEndBtn');
+    if (endBtn) endBtn.disabled = closed;
+    const rateBtn = document.getElementById('ucRateBtn');
+    /* 只有正常结束（closed）才可评价：超时是无人在线导致的关闭，评价没有意义 */
+    if (rateBtn) rateBtn.disabled = !(c.status === 'closed' && !UC.rated);
+    if (closed) stopUserConsultPolling();
+    /* 只有 pending→active 才提示，避免重复弹 */
+    if (prev === 'pending' && c.status === 'active') toast('营养师已接入，可以开始对话了');
+  } catch (e) { /* 状态同步失败不打断会话，消息轮询继续 */ }
+}
+
+async function sendUserConsultMsg() {
+  if (!UC.id) return;
+  const el = document.getElementById('ucInput');
+  const content = (el && el.value || '').trim();
+  if (!content) { toast('请输入内容'); return; }
+  if (content.length > 1000) { toast('单条消息不要超过 1000 字'); return; }
+  const btn = document.getElementById('ucSendBtn');
+  if (btn) btn.disabled = true;
+  try {
+    await API.consultations.send(UC.id, content, false);
+    if (el) el.value = '';
+    await refreshUserConsult(true);
+  } catch (e) {
+    toast('发送失败：' + (e.message || '请稍后重试'));
+  } finally {
+    if (btn && UC.status !== 'closed' && UC.status !== 'timeout') btn.disabled = false;
+  }
+}
+
+async function closeUserConsultEnd() {
+  if (!UC.id) return;
+  if (!confirm('确认结束这条咨询？结束后营养师无法继续回复，且会自动绑定该营养师为你后续的专属营养师。')) return;
+  try {
+    await API.consultations.close(UC.id);
+    toast('已结束咨询');
+    await refreshUserConsult(true);
+    await loadContacts();
+  } catch (e) { toast('结束失败：' + (e.message || '请稍后重试')); }
+}
+
+async function rateUserConsult() {
+  if (!UC.id) return;
+  const raw = prompt('请为本次咨询打分（1-5 分，5 为最满意）');
+  if (raw === null) return;
+  const score = parseInt(String(raw).trim(), 10);
+  if (!(score >= 1 && score <= 5)) { toast('分值需在 1~5 之间'); return; }
+  try {
+    await API.consultations.rate(UC.id, score, '');
+    toast('评价已提交，谢谢反馈');
+    await refreshUserConsult(true);
+  } catch (e) { toast('评价失败：' + (e.message || '请稍后重试')); }
+}
+
+/* 切回 AI 咨询（不销毁 UC 之外的任何状态，也不弹窗） */
+function closeUserConsult() {
+  stopUserConsultPolling();
+  UC.id = null;
+  try { sessionStorage.removeItem('uc_last_id'); } catch (e) {}
+  showUserConsultView(false);
+  loadContacts();
 }
 
 /* 未读通知数（顶栏红点）；页面无该元素或未登录时静默跳过 */
@@ -2147,7 +2855,7 @@ async function renderNotices() {
       '<div class="card" style="padding:10px 14px;margin-bottom:8px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
       '<b style="font-size:13px">' + esc(n.title || '通知') + '</b>' +
-      (n.is_read ? '<span class="badge" style="flex-shrink:0">已读</span>'
+      ((n.read === true || n.is_read === true) ? '<span class="badge" style="flex-shrink:0">已读</span>'
                  : '<span class="badge red" style="flex-shrink:0">未读</span>') +
       '</div>' +
       '<div class="desc" style="margin-top:4px">' + esc(n.content || '') + '</div>' +
@@ -2308,6 +3016,80 @@ async function loadShoppingList() {
   }
 }
 
+/* ---------------- 智能荐菜（知识库检索 + 忌口规则过滤，不调模型自由发挥） ---------------- */
+const DISH_MEALS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
+
+function renderDishes(d, box) {
+  const dishes = (d && d.dishes) || [];
+  const refs = (d && d.references) || [];
+  const avoid = (d && d.avoid_foods) || [];
+  if (!dishes.length) {
+    box.innerHTML = '<div class="desc">规则库未匹配到菜品，已如实返回空结果。' +
+      (avoid.length ? '（已避开：' + esc(avoid.join('、')) + '）' : '') + '</div>';
+    return;
+  }
+  const groups = {};
+  dishes.forEach(x => { (groups[x.meal_type] = groups[x.meal_type] || []).push(x); });
+  let html = '<div class="desc">匹配到 ' + dishes.length + ' 道菜' +
+    (d.constitution ? ' · 体质：' + esc(d.constitution) : '') +
+    (avoid.length ? ' · 已避开忌口：' + esc(avoid.join('、')) : '') + '</div>';
+  ['breakfast', 'lunch', 'dinner'].forEach(m => {
+    (groups[m] || []).forEach(x => {
+      html += '<div style="margin-top:10px">' +
+        '<span class="badge green">' + esc(DISH_MEALS[m] || m) + '</span> <b>' + esc(x.dish_name) + '</b>' +
+        (x.efficacy ? '<div class="desc">' + esc(x.efficacy) + '</div>' : '') +
+        ((x.ingredients || []).length
+          ? '<div style="margin-top:4px">' + x.ingredients.map(i =>
+              '<span class="badge" style="margin:4px 6px 0 0">' + esc(i) + '</span>').join('') + '</div>'
+          : '') +
+        (x.caution ? '<div class="desc" style="margin-top:4px">注意：' + esc(x.caution) + '</div>' : '') +
+        '</div>';
+    });
+  });
+  if (refs.length) {
+    html += '<div class="desc" style="margin-top:12px">知识库来源（' + refs.length + ' 条）：</div>' +
+      refs.map(r => '<div class="desc" style="margin-top:4px">· ' +
+        esc(r.title || r.source || '知识片段') +
+        (r.fragment ? '：' + esc(r.fragment) : '') + '</div>').join('');
+  } else {
+    html += '<div class="desc" style="margin-top:12px">本次未命中知识库引用，菜品仅来自规则库。</div>';
+  }
+  if (d.note) html += '<div class="desc" style="margin-top:8px">' + esc(d.note) + '</div>';
+  box.innerHTML = html;
+}
+
+async function recommendDishes() {
+  if (!requireLogin()) return;
+  const input = document.getElementById('dishQuery');
+  const box = document.getElementById('dishResult');
+  if (!box) return;
+  const q = ((input && input.value) || '').trim();
+  box.textContent = '正在按体质与忌口匹配…';
+  let constitution = null;
+  let avoid = [];
+  try {
+    /* 体质取自最近一次食养方案；忌口/过敏取档案结构化清单。读不到也不阻断荐菜 */
+    const h = await API.users.healthContext();
+    constitution = (h && h.constitution) || null;
+    const raw = [h && h.allergy_labels, h && h.taboo_labels].filter(Boolean).join('、');
+    avoid = raw.split(/[、,，;；\s]+/).filter(Boolean);
+  } catch (e) {
+    /* 档案缺失时退化为按输入推荐 */
+  }
+  if (!q && !constitution) {
+    box.innerHTML = '<div class="desc">请先输入想吃的菜式或食材；完成测评后也可以直接点推荐，按体质匹配。</div>';
+    return;
+  }
+  try {
+    const d = await API.recommend.dishes({
+      query: q || null, constitution: constitution, avoid_foods: avoid
+    });
+    renderDishes(d, box);
+  } catch (e) {
+    box.innerHTML = '<div class="desc">推荐失败：' + esc(e.message) + '</div>';
+  }
+}
+
 /* ---------------- 健康档案（身高/体重/疾病史/饮食偏好） ---------------- */
 const PF_DISEASES = ['高血压', '糖尿病', '高血脂', '高尿酸/痛风', '冠心病', '慢性肾病', '脂肪肝', '贫血', '甲亢', '甲减', '胃病'];
 
@@ -2408,19 +3190,129 @@ const SCENE_AGENTS = {
   travel: []
 };
 
+/* ---------------- 跟踪提醒（打卡执行 + 站内提醒） ---------------- */
+const CHECKIN_LABEL = { plan: '计划', meal: '用餐', exercise: '运动', weight: '体重' };
+const NOTICE_TYPE = { risk: '风险提醒', checkin: '打卡提醒', consultation: '咨询', system: '系统' };
+
+async function loadReminder() {
+  if (!document.getElementById('rmRate')) return;
+  await Promise.all([loadReminderStats(), loadReminderCalendar(), renderReminderNotices()]);
+}
+
+async function loadReminderStats() {
+  try {
+    const s = await API.checkins.stats();
+    setText('rmRate', s.week_rate == null ? '—' : s.week_rate + '%');
+    setText('rmRateSub', (s.week_start || '') + ' ~ ' + (s.week_end || '') + '（分母固定 7 天）');
+    setText('rmChecked', (s.week_checked || 0) + ' / ' + (s.week_total || 7));
+    setText('rmStreak', s.streak == null ? '—' : String(s.streak));
+    setText('rmToday', s.checked_today ? '已打卡' : '未打卡');
+    setText('rmTodaySub', s.checked_today ? '今日已有计划打卡记录' : '点右上角「今日打卡」记录');
+  } catch (e) {
+    ['rmRate', 'rmChecked', 'rmStreak', 'rmToday'].forEach(i => setText(i, '—'));
+    setText('rmRateSub', e.code === 10001 ? '登录后可查看打卡统计' : e.message);
+  }
+}
+
+async function loadReminderCalendar() {
+  const box = document.getElementById('rmCalendar');
+  if (!box) return;
+  const types = document.getElementById('rmTypes');
+  if (types) types.textContent = '加载中…';
+  try {
+    const d = await API.checkins.list(14);
+    const items = (d && d.items) || [];
+    const byDate = {};
+    items.forEach(function (it) {
+      const day = String(it.checkin_date || '').slice(0, 10);
+      if (!day) return;
+      (byDate[day] = byDate[day] || []).push(it.check_type);
+    });
+    const cells = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const dt = new Date(now.getTime() - i * 86400000);
+      const key = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') +
+        '-' + String(dt.getDate()).padStart(2, '0');
+      const got = byDate[key] || [];
+      const tip = key + '：' + (got.length ? got.map(t => CHECKIN_LABEL[t] || t).join('、') : '未打卡');
+      cells.push('<div class="rm-day' + (got.length ? ' on' : '') + (i === 0 ? ' today' : '') +
+        '" title="' + esc(tip) + '"><span class="rm-d">' + dt.getDate() + '</span>' +
+        '<i class="rm-dot' + (got.length ? ' on' : '') + '"></i></div>');
+    }
+    box.innerHTML = cells.join('');
+    setText('rmCalMeta', '近 14 天有记录 ' + Object.keys(byDate).length + ' 天');
+
+    const cnt = {};
+    items.forEach(it => { cnt[it.check_type] = (cnt[it.check_type] || 0) + 1; });
+    const keys = Object.keys(cnt);
+    if (types) {
+      types.innerHTML = keys.length
+        ? '<div>' + keys.map(function (k) {
+            return '<span class="badge" style="margin:4px 6px 0 0">' +
+              esc(CHECKIN_LABEL[k] || k) + ' ' + cnt[k] + ' 次</span>';
+          }).join('') + '</div>' +
+          '<div class="desc" style="margin-top:6px">近 14 天共 ' + items.length + ' 条打卡明细</div>'
+        : '<div class="desc">近 14 天没有打卡记录。</div>';
+    }
+  } catch (e) {
+    box.innerHTML = '<div class="desc">' + esc(e.code === 10001 ? '登录后可查看打卡记录' : e.message) + '</div>';
+    if (types) types.textContent = '—';
+  }
+}
+
+async function renderReminderNotices() {
+  const box = document.getElementById('rmNotices');
+  if (!box) return;
+  box.innerHTML = '<div class="desc">加载中…</div>';
+  try {
+    const d = await API.notifications.list({ limit: 20 });
+    const items = (d && d.items) || [];
+    setText('rmNoticeMeta', '未读 ' + ((d && d.unread) || 0) + ' 条 · 共 ' + ((d && d.total) || 0) + ' 条');
+    if (!items.length) {
+      box.innerHTML = '<div class="desc">暂无提醒。完成测评、打卡或咨询后，相关提醒会出现在这里。</div>';
+      return;
+    }
+    box.innerHTML = items.map(function (n) {
+      const read = n.read === true || n.is_read === true;
+      return '<div class="rm-notice' + (read ? '' : ' unread') + '">' +
+        '<div class="rm-notice-head"><b>' + esc(n.title || '通知') + '</b>' +
+        '<span class="badge' + (read ? '' : ' red') + '">' + (read ? '已读' : '未读') + '</span></div>' +
+        '<div class="desc" style="margin-top:4px">' + esc(n.content || '') + '</div>' +
+        '<div class="desc" style="margin-top:4px;font-size:11px">' +
+        esc(NOTICE_TYPE[n.type] || n.type || '') + ' · ' + esc(n.created_at || '') + '</div></div>';
+    }).join('');
+  } catch (e) {
+    box.innerHTML = '<div class="desc">' +
+      esc(e.code === 10001 ? '登录后可查看提醒' : e.message) + '</div>';
+  }
+}
+
+async function checkinByType(type) {
+  if (!requireLogin()) return;
+  try {
+    await API.checkins.create({ check_type: type });
+    toast('已记录' + (CHECKIN_LABEL[type] || '') + '打卡（同日重复打卡为幂等更新，不重复计数）');
+    if (document.getElementById('rmRate')) await loadReminder();
+    if (document.getElementById('dietRate')) await loadDiet();
+  } catch (e) {
+    toast('打卡失败：' + e.message);
+  }
+}
+
 async function loadScenes() {
   const box = document.getElementById('sceneGrid');
   if (!box) return;
-  box.innerHTML = '<div class="card desc">加载中…</div>';
+  box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const d = await API.agents.scenes();
     SCENES = (d && d.items) || [];
-    if (!SCENES.length) { box.innerHTML = '<div class="card desc">暂无场景配置。</div>'; return; }
+    if (!SCENES.length) { box.innerHTML = '<div class="empty">暂无场景配置。</div>'; return; }
     box.innerHTML = SCENES.map(s =>
-      '<div class="card" style="cursor:pointer" onclick="showScene(\'' + esc(s.key) + '\')">' +
+      '<div class="card quick" onclick="showScene(\'' + esc(s.key) + '\')">' +
       '<h3>' + esc(s.name) + '</h3><div class="desc">' + esc(s.desc) + '</div></div>').join('');
   } catch (e) {
-    box.innerHTML = '<div class="card desc">' + esc(e.code === 10001 ? '登录后可查看场景' : e.message) + '</div>';
+    box.innerHTML = '<div class="empty">' + esc(e.code === 10001 ? '登录后可查看场景' : e.message) + '</div>';
   }
 }
 
@@ -2432,7 +3324,7 @@ async function showScene(key) {
   const keys = SCENE_AGENTS[key] || [];
   let body = esc(s.desc);
   if (!keys.length) {
-    body += '\n\n该场景依赖第三方能力（如目的地数据与餐厅库），当前为留桩状态，暂不可用。';
+    body += '\n\n该场景需要目的地与餐厅数据支持。出行前可先在「营养师智能体」里咨询目的地饮食注意事项。';
     setText('sceneDetailBody', body);
   } else {
     body += '\n\n依赖智能体：';
@@ -2469,27 +3361,154 @@ function enterScene() {
 }
 
 /* ================= 智能体中心（主智能体 + 六个子智能体） ================= */
+/* 图标按 key 固定（图标不是业务数据）；名称/描述/启停状态一律取自 /api/v1/agents */
+const AGENT_ICON = { orchestrator: '🧠', assessment: '🩺', diet: '🌿', dish: '🥢',
+  steward: '🔔', dietitian: '💬', data: '📊' };
+/* 每个智能体的业务入口：点「去使用」直接跳到能真正用它的那一屏 */
+function agentEntry(key) {
+  if (key === 'assessment') return { id: 'assessment', label: '去测评' };
+  if (key === 'diet') return { id: 'diet', label: '去生成计划' };
+  if (key === 'dish') return { id: 'diet', label: '去荐菜' };
+  if (key === 'steward') return { id: 'reminder', label: '去看打卡' };
+  if (key === 'dietitian') return { id: 'nutrition', label: '去咨询' };
+  if (key === 'data') return canSee('analytics') ? { id: 'analytics', label: '去查询' } : { id: 'data', label: '看分析' };
+  return { id: 'agents', label: '留在本页' };
+}
+
 async function loadAgentsPanel() {
   const box = document.getElementById('primaryAgentBody');
+  const grid = document.getElementById('subAgentGrid');
   if (!box) return;
+  closeAgentDetail();          /* 重新加载目录时收起上一次的详情，避免展示过期数据 */
   box.innerHTML = '<div class="desc">加载中…</div>';
+  if (grid) grid.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const d = await API.agents.list();
     const items = (d && d.items) || [];
     const pk = (d && d.primary_key) || 'orchestrator';
     const primary = items.filter(a => a.key === pk)[0];
     const subs = items.filter(a => a.key !== pk);
-    if (!primary) { box.innerHTML = '<div class="desc">目录里未配置主智能体。</div>'; return; }
-    const chips = subs.map(a =>
-      '<span class="badge' + (a.enabled ? ' green' : '') + '">' + esc(a.name) + '</span>').join(' ');
-    box.innerHTML =
-      '<div class="desc">' + esc(primary.desc) + '</div>' +
-      '<div style="margin-top:10px">管辖子智能体（' + subs.length + ' 个）：' + chips + '</div>';
+    if (!primary) {
+      box.innerHTML = '<div class="desc">目录里未配置主智能体。</div>';
+    } else {
+      const chips = subs.map(a =>
+        '<span class="badge' + (a.enabled ? ' green' : '') + '">' + esc(a.name) + '</span>').join(' ');
+      box.innerHTML =
+        '<div class="desc">' + esc(primary.desc) + '</div>' +
+        '<div style="margin-top:10px">管辖子智能体（' + subs.length + ' 个）：' + chips + '</div>' +
+        '<div class="desc" style="margin-top:6px">目录来源：' +
+        (d.source === 'config' ? '后台配置（system_config · agent.catalog）' : '内置目录') + '</div>';
+    }
     setText('subAgentCount', subs.length + ' 个');
+    if (!grid) return;
+    if (!subs.length) { grid.innerHTML = '<div class="empty">目录中没有子智能体。</div>'; return; }
+    grid.innerHTML = subs.map(function (a) {
+      const ent = agentEntry(a.key);
+      const k = esc(a.key);
+      return '<div class="card agent-card clickable" tabindex="0" role="button" ' +
+        'onclick="openAgentDetail(\'' + k + '\')" ' +
+        'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openAgentDetail(\'' + k + '\')}">' +
+        '<div class="agent-top"><div class="agent-icon">' + (AGENT_ICON[a.key] || '🤖') + '</div>' +
+        '<div><h3>' + esc(a.name) + '</h3><span class="badge' + (a.enabled ? ' green' : '') + '">' +
+        (a.enabled ? '运行中' : '未启用') + '</span></div></div>' +
+        '<div class="desc" style="margin-top:10px;line-height:1.75">' + esc(a.desc || '') + '</div>' +
+        '<div class="agent-foot"><span class="desc">' + k + '</span>' +
+        '<button class="btn" onclick="event.stopPropagation();go(\'' + ent.id + '\')">' + esc(ent.label) + '</button>' +
+        '</div></div>';
+    }).join('');
   } catch (e) {
-    box.innerHTML = '<div class="desc">' +
-      esc(e.code === 10001 ? '登录后可查看智能体目录' : e.message) + '</div>';
+    const msg = e.code === 10001 ? '登录后可查看智能体目录' : e.message;
+    box.innerHTML = '<div class="desc">' + esc(msg) + '</div>';
+    if (grid) grid.innerHTML = '<div class="empty">' + esc(msg) + '</div>';
   }
+}
+
+/* 智能体详情：目录信息 + Runtime 注册工具 + 真实运行指标（/agent-metrics）。
+   三份数据都来自后端；没有运行记录就显示「—」，不补零。 */
+async function openAgentDetail(key) {
+  const panel = document.getElementById('agentDetail');
+  if (!panel) return;
+  panel.style.display = '';
+  panel.innerHTML = '<div class="desc">读取 ' + esc(key) + ' 的能力与运行指标…</div>';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  let detail, caps, metrics;
+  try {
+    detail = await API.agents.detail(key);
+  } catch (e) {
+    panel.innerHTML = '<div class="desc">' + esc(e.message) + '</div>';
+    return;
+  }
+  caps = await API.agents.runtime(key).catch(function () { return null; });
+  metrics = await API.agents.metrics().catch(function () { return null; });
+
+  const m = (metrics && metrics.agents && metrics.agents[key]) || null;
+  const tools = (caps && caps.tools) || [];
+  const toolStat = {};
+  ((metrics && metrics.tools) || []).forEach(function (t) {
+    if (t.agent === key) toolStat[t.tool] = t;
+  });
+  const stat = function (v, suffix) {
+    return (v === null || v === undefined) ? '—' : (Number(v).toLocaleString() + (suffix || ''));
+  };
+  const ent = agentEntry(key);
+
+  let html = '<div class="section-head"><div><h2>' + esc(detail.name || key) + '</h2>' +
+    '<div class="desc">' + esc(detail.desc || '') + '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+    '<span class="badge' + (detail.enabled ? ' green' : '') + '">' +
+    (detail.enabled ? '运行中' : '未启用') + '</span>' +
+    '<button class="btn primary" onclick="go(\'' + ent.id + '\')">' + esc(ent.label) + '</button>' +
+    '<button class="btn" onclick="closeAgentDetail()">收起</button></div></div>';
+
+  if (m && m.tasks) {
+    html += '<div class="grid4" style="margin-top:var(--sp-3)">' +
+      '<div class="mini-stat"><div class="k">累计任务</div><div class="v">' + stat(m.tasks) + '</div><div class="m">Runtime 上报</div></div>' +
+      '<div class="mini-stat"><div class="k">成功率</div><div class="v">' + (m.success_rate * 100).toFixed(1) + '%</div><div class="m">完成 ÷ 任务</div></div>' +
+      '<div class="mini-stat"><div class="k">任务 P95</div><div class="v">' + (m.p95_ms ? stat(m.p95_ms, ' ms') : '—') + '</div><div class="m">端到端耗时</div></div>' +
+      '<div class="mini-stat"><div class="k">失败 / 待审批</div><div class="v">' + stat(m.failed) + ' / ' + stat(m.waiting_approval) + '</div><div class="m">失败数与挂起审批</div></div>' +
+      '</div>';
+    if (m.estimated_cost) {
+      html += '<div class="desc" style="margin-top:6px">估算成本 ' + m.estimated_cost + '（仅统计显式上报的 token/成本）</div>';
+    }
+  } else {
+    html += '<div class="desc" style="margin-top:var(--sp-3)">该智能体当前没有运行记录（Runtime 未上报任务），因此不展示成功率与耗时；' +
+      '下方工具清单与审批配置来自注册表，有真实调用后这里会出现统计数据。</div>';
+  }
+
+  html += '<div class="section-head" style="margin-top:var(--sp-4)"><h3>注册工具</h3>' +
+    '<span class="desc">共 ' + tools.length + ' 个 · 需人工审批 ' + ((caps && caps.approval_tools) || []).length + ' 个</span></div>';
+  if (!tools.length) {
+    html += '<div class="desc">该智能体未注册工具。</div>';
+  } else {
+    html += '<div class="table-wrap"><table class="table"><thead><tr>' +
+      '<th>工具</th><th>说明</th><th>模式</th><th>风险</th><th>人工审批</th><th>处理器</th><th>调用 / 错误率 / P95</th>' +
+      '</tr></thead><tbody>' + tools.map(function (t) {
+        const s = toolStat[t.name];
+        const calls = s ? (s.calls + ' 次') : '未调用';
+        const err = s && s.calls ? (' · ' + (s.error_rate * 100).toFixed(1) + '%') : '';
+        const p95 = s && s.p95_ms ? (' · ' + s.p95_ms + 'ms') : '';
+        return '<tr><td><code>' + esc(t.name) + '</code></td><td>' + esc(t.description || '') +
+          '</td><td>' + esc(t.mode || '') + '</td><td>' + esc(t.risk_level || '') +
+          '</td><td>' + (t.requires_approval ? '<span class="badge">需审批</span>' : '—') +
+          '</td><td>' + (t.handler_registered ? '已绑定' : '<span class="desc">纯登记</span>') +
+          '</td><td>' + esc(calls + err + p95) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  const contract = (caps && caps.implemented_contract) || [];
+  if (contract.length) {
+    html += '<div class="desc" style="margin-top:10px">已实现契约：' +
+      contract.map(function (c) { return '<span class="badge" style="margin:4px 6px 0 0">' + esc(c) + '</span>'; }).join('') +
+      '</div>';
+  }
+  panel.innerHTML = html;
+}
+
+function closeAgentDetail() {
+  const panel = document.getElementById('agentDetail');
+  if (!panel) return;
+  panel.style.display = 'none';
+  panel.innerHTML = '';
 }
 
 async function runDispatch() {
@@ -2614,18 +3633,31 @@ async function loadTrend() {
       renderTrendTable(d);            // 空态也要有表头骨架，结构固定不跳动
       return;
     }
-    const max = Math.max.apply(null, pts.map(p => Number(p.standardized_score != null ? p.standardized_score : p.score) || 0)) || 1;
     // 跨模板时用标准化百分制作图，否则不同量表的分数画在一条轴上会误导
     const crossTemplate = new Set(pts.map(p => p.template_name)).size > 1;
-    chart.innerHTML = pts.map(p => {
+    const series = pts.map(function (p) {
       const v = Number(crossTemplate ? (p.standardized_score != null ? p.standardized_score : p.score) : p.score) || 0;
-      const tip = p.date + ' · ' + (p.template_name || '') +
-        (p.template_version ? ' v' + p.template_version : '') +
-        ' · 百分制 ' + (p.standardized_score == null ? '—' : p.standardized_score) +
-        ' · 等级 ' + (p.level || '—');
-      return '<i style="height:' + Math.max(4, Math.round(v / max * 100)) +
-        '%" title="' + esc(tip) + '"></i>';
-    }).join('');
+      return {
+        label: String(p.date || '').slice(5),
+        value: v,
+        tip: p.date + ' · ' + (p.template_name || '') +
+          (p.template_version ? ' v' + p.template_version : '') +
+          ' · ' + (crossTemplate ? '标准化百分制 ' : '总分 ') + v +
+          ' · 等级 ' + (p.level || '—')
+      };
+    });
+    if (window.Viz) {
+      Viz.area(chart, {
+        points: series, unit: ' 分', height: 250,
+        title: crossTemplate ? '健康评分趋势（标准化百分制）' : '健康评分趋势'
+      });
+    } else {
+      // 可视化模块未加载时的退路：仍然是同一份数据的柱状呈现
+      const max = Math.max.apply(null, series.map(s => s.value)) || 1;
+      chart.innerHTML = series.map(s =>
+        '<i style="height:' + Math.max(4, Math.round(s.value / max * 100)) + '%" title="' + esc(s.tip) + '"></i>'
+      ).join('');
+    }
     setText('trendMeta', '共 ' + pts.length + ' 次测评记录' +
       (crossTemplate ? '（跨模板，已统一按标准化百分制对比）' : '') +
       '（鼠标悬停查看单次得分）');
@@ -2735,67 +3767,147 @@ async function loadInsight() {
 }
 
 /* ================= 运营数据大屏（J 组，需管理员权限） ================= */
+/* ---------------- 运营大屏（#admin） ----------------
+ * 数据全部来自后端的真实统计接口，本段只负责"画出来"：
+ *   - 拿不到值的字段一律显示 —，不做估算、不补零；
+ *   - 环形/折线的刻度与分母由后端字段决定，前端不重新定义口径；
+ *   - 图表能力来自 assets/viz.js（手写 SVG），无第三方库、无构建。
+ */
+
+/** 大屏右上角的本地时钟：让"实时"这件事有可见的佐证，而不是一句文案。 */
+function _opsTick() {
+  const box = document.getElementById('opsClock');
+  if (!box) return;
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  box.textContent = ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+/** 数值滚动。没有值就写 —，绝不从 0 滚到一个假数字。 */
+function _opsNum(id, v, opts) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const n = Number(v);
+  if (v == null || v === '' || !isFinite(n)) { el.textContent = '—'; return; }
+  if (window.Viz) Viz.countUp(el, Object.assign({ to: n, from: n * 0.82 }, opts || {}));
+  else el.textContent = n.toLocaleString();
+}
+
 async function loadOps() {
   const note = document.getElementById('opsNote');
-  const ids = ['opsUsers', 'opsAssess', 'opsReports', 'opsChat'];
+  _opsTick();
+  if (window.Viz) {
+    Viz.skeleton(document.getElementById('opsTrendVis'), 5);
+    Viz.skeleton(document.getElementById('opsRatioVis'), 5);
+    Viz.skeleton(document.getElementById('opsLevels'), 4);
+  }
   try {
     const d = await API.admin.opsDashboard();
-    setText('opsUsers', d.users == null ? '—' : String(d.users));
-    setText('opsNewUsers', '今日新增 ' + (d.new_users_today == null ? '—' : d.new_users_today));
-    setText('opsAssess', d.assessments == null ? '—' : String(d.assessments));
+
+    /* —— 总量 —— */
+    _opsNum('opsUsers', d.users);
+    setText('opsNewUsers', d.new_users_today == null ? '今日新增 —' : '今日 +' + d.new_users_today);
+    _opsNum('opsAssess', d.assessments);
     setText('opsAssessDone', '已完成 ' + (d.completed_assessments == null ? '—' : d.completed_assessments));
-    setText('opsReports', d.reports == null ? '—' : String(d.reports));
+    _opsNum('opsReports', d.reports);
     setText('opsAvg', d.avg_score == null ? '—' : String(d.avg_score));
-    setText('opsChat', d.chat_messages == null ? '—' : String(d.chat_messages));
+    _opsNum('opsChat', d.chat_messages);
     setText('opsDocs', d.knowledge_docs == null ? '—' : String(d.knowledge_docs));
-    // 活跃与使用率（故事 4）
-    setText('opsDau', d.dau == null ? '—' : String(d.dau));
-    setText('opsMau', d.mau == null ? '—' : String(d.mau));
-    setText('opsDauMeta', d.active_note || '—');
-    setText('opsMauMeta', d.active_note || '—');
-    setText('opsMonth', d.month_assessment == null ? '—' : String(d.month_assessment));
-    setText('opsAiRatio', d.ai_ratio == null ? '—' : (d.ai_ratio * 100).toFixed(1) + '%');
+
+    /* —— 活跃度 —— */
+    _opsNum('opsDau', d.dau);
+    _opsNum('opsMau', d.mau);
+    // 两个小格子放"由两个后端数字相除得到"的比率，口径说明统一放面板脚注
+    setText('opsDauMeta', (d.dau != null && Number(d.mau) > 0)
+      ? 'DAU/MAU ' + (Number(d.dau) * 100 / Number(d.mau)).toFixed(1) + '%'
+      : '—');
+    setText('opsMauMeta', (d.mau != null && Number(d.users) > 0)
+      ? '月活率 ' + (Number(d.mau) * 100 / Number(d.users)).toFixed(1) + '%'
+      : '—');
+    _opsNum('opsMonth', d.month_assessment);
+    setText('opsMonthMeta', '自然月累计');
+    // 报告生成率 = 报告数 ÷ 测评数；两个数都来自后端，空了就显示 —，不猜
+    setText('opsReportRate', (d.reports != null && Number(d.assessments) > 0)
+      ? (Number(d.reports) * 100 / Number(d.assessments)).toFixed(1) + '%'
+      : '—');
+    setText('opsActiveNote', d.active_note || '—');
+
+    /* —— 近 7 日测评趋势：面积折线 —— */
+    const trend = (d.assessment_trend_7d || []).map(function (x) {
+      return { label: String(x.date || '').slice(5), value: Number(x.count) || 0 };
+    });
+    const tBox = document.getElementById('opsTrendVis');
+    if (window.Viz && tBox) {
+      if (trend.length) {
+        Viz.area(tBox, { points: trend, unit: ' 份', title: '近 7 日测评发起量', height: 250 });
+        Viz.spark(document.getElementById('opsSparkTrend'), { values: trend.map(function (t) { return t.value; }) });
+      } else {
+        tBox.innerHTML = '<div class="empty sm">暂无趋势数据</div>';
+      }
+    }
+    setText('opsTrendMeta', trend.length
+      ? '近 7 日合计 ' + trend.reduce(function (a, t) { return a + t.value; }, 0).toLocaleString() +
+        ' 份 · 悬停查看单日数值'
+      : (d.note || '—'));
+
+    /* —— 智能咨询占比：环形 —— */
+    const rBox = document.getElementById('opsRatioVis');
+    if (window.Viz && rBox && d.ai_ratio != null) {
+      Viz.donut(rBox, {
+        value: d.ai_ratio * 100, max: 100, size: 196,
+        title: '智能咨询占比', sub: 'AI 营养师答复'
+      });
+    } else if (rBox) {
+      rBox.innerHTML = '<div class="empty sm">暂无统计口径数据</div>';
+    }
     setText('opsAiRatioMeta', d.ai_ratio_note || '—');
+
     renderOpsTemplates(d.template_usage);
-    // 趋势
-    const chart = document.getElementById('opsTrend');
-    const trend = d.assessment_trend_7d || [];
-    if (chart) {
-      const max = Math.max.apply(null, trend.map(x => Number(x.count) || 0).concat([1]));
-      chart.innerHTML = trend.length
-        ? trend.map(x => '<i style="height:' + Math.max(4, Math.round((Number(x.count) || 0) / max * 100)) +
-          '%" title="' + esc(x.date + ' · ' + x.count) + '"></i>').join('')
-        : '<div class="desc">暂无趋势数据</div>';
+    _renderOpsLevels(d.level_distribution);
+
+    if (note) {
+      note.textContent = '数据生成时间：' + (d.generated_at || '—') + (d.note ? ' · ' + d.note : '');
     }
-    setText('opsTrendMeta', '近 7 日每日测评发起量（悬停查看）');
-    // 等级分布
-    const dist = d.level_distribution || {};
-    const KEY_NAME = { excellent: '优秀', good: '良好', needs_improvement: '待改善', poor: '较差', unknown: '未知' };
-    const lv = document.getElementById('opsLevels');
-    if (lv) {
-      const keys = Object.keys(dist);
-      lv.innerHTML = keys.length
-        ? keys.map(k => '<span class="badge" style="margin:4px 6px 0 0">' + esc(KEY_NAME[k] || k) +
-          '：' + esc(dist[k]) + '</span>').join('')
-        : '<span class="desc">暂无等级分布数据</span>';
-    }
-    if (note) note.textContent = '数据生成时间：' + (d.generated_at || '—') + (d.note ? ' · ' + d.note : '');
   } catch (e) {
-    ids.forEach(i => setText(i, '—'));
-    ['opsNewUsers', 'opsAssessDone', 'opsAvg', 'opsDocs', 'opsTrendMeta',
-      'opsDau', 'opsMau', 'opsMonth', 'opsAiRatio', 'opsAiRatioMeta'].forEach(i => setText(i, '—'));
-    const chart = document.getElementById('opsTrend');
-    if (chart) chart.innerHTML = '<div class="desc">无数据</div>';
-    const lv = document.getElementById('opsLevels');
-    if (lv) lv.innerHTML = '<span class="desc">—</span>';
-    const tp = document.getElementById('opsTemplates');
-    if (tp) tp.innerHTML = '<span class="desc">—</span>';
+    ['opsUsers', 'opsAssess', 'opsReports', 'opsChat', 'opsDau', 'opsMau', 'opsMonth', 'opsReportRate']
+      .forEach(i => setText(i, '—'));
+    ['opsNewUsers', 'opsAssessDone', 'opsAvg', 'opsDocs', 'opsDauMeta', 'opsMauMeta',
+      'opsAiRatioMeta', 'opsTemplatesMeta', 'opsTrendMeta', 'opsActiveNote'].forEach(i => setText(i, '—'));
+    ['opsTrendVis', 'opsRatioVis', 'opsTemplates', 'opsLevels'].forEach(function (id) {
+      const box = document.getElementById(id);
+      if (box) box.innerHTML = '<div class="empty sm">—</div>';
+    });
     if (note) {
       note.textContent = e.code === 10005
         ? '当前账号不是管理员，运营大屏数据不可见。此处不显示任何编造数据 —— 如需查看请用管理员账号登录。'
         : ('加载失败：' + e.message);
     }
   }
+}
+
+/** 测评等级分布：分布类数据用占比条，读者不必在脑子里做除法。 */
+function _renderOpsLevels(dist) {
+  const lv = document.getElementById('opsLevels');
+  if (!lv) return;
+  dist = dist || {};
+  const KEY_NAME = { excellent: '优秀', good: '良好', needs_improvement: '待改善', poor: '较差', unknown: '未知' };
+  const keys = Object.keys(dist).filter(k => Number(dist[k]) > 0);
+  const total = keys.reduce((a, k) => a + (Number(dist[k]) || 0), 0);
+  if (!keys.length) {
+    lv.innerHTML = '<div class="empty sm">暂无等级分布数据</div>';
+    return;
+  }
+  // 按数量降序：从大到小读，比按字典序读更容易看出结构
+  keys.sort((a, b) => Number(dist[b]) - Number(dist[a]));
+  lv.innerHTML = '<div class="bars">' + keys.map(function (k) {
+    const v = Number(dist[k]) || 0;
+    const pct = total > 0 ? v * 100 / total : 0;
+    // 颜色按等级语义固定（优秀绿、较差红），不按顺序轮换 —— 否则换个数据顺序颜色就自相矛盾
+    return '<div class="bar lv-' + esc(k) + '"><span class="nm">' + esc(KEY_NAME[k] || k) + '</span>' +
+      '<div class="track"><div class="fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<span class="val">' + v.toLocaleString() + ' · ' + pct.toFixed(1) + '%</span></div>';
+  }).join('') + '</div>' +
+    '<div class="dash-foot">共 ' + total.toLocaleString() + ' 份有等级的报告，占比按其中有效等级计算</div>';
 }
 
 /** 模板使用率：逐模板条状占比 + 汇总口径。无数据一律显示 —，不补零。 */
@@ -2809,14 +3921,14 @@ function renderOpsTemplates(usage) {
     return;
   }
   const total = Number(usage.total_records) || 0;
-  box.innerHTML = usage.items.map(function (it) {
+  box.innerHTML = '<div class="bars stacked">' + usage.items.map(function (it) {
     const pct = total ? (Number(it.records) || 0) * 100 / total : 0;
     const st = it.status === 'published' ? '' : '（' + esc(it.status || '未发布') + '）';
-    return '<div class="metric"><div class="metric-head"><span>' +
-      esc(it.name || it.code || ('#' + it.template_id)) + st + '</span><span>' +
-      (Number(it.records) || 0).toLocaleString() + '（' + pct.toFixed(1) + '%）</span></div>' +
-      '<div class="bar"><span style="width:' + pct.toFixed(1) + '%"></span></div></div>';
-  }).join('');
+    const nm = esc(it.name || it.code || ('#' + it.template_id));
+    return '<div class="bar"><span class="nm"><span title="' + nm + '">' + nm + st + '</span>' +
+      '<b>' + (Number(it.records) || 0).toLocaleString() + ' · ' + pct.toFixed(1) + '%</b></span>' +
+      '<div class="track"><div class="fill" style="width:' + pct.toFixed(1) + '%"></div></div></div>';
+  }).join('') + '</div>';
   if (meta) {
     setText('opsTemplatesMeta', '共 ' + (usage.template_count || 0) + ' 个模板，' +
       '已使用 ' + (usage.used_template_count || 0) + ' 个，' +
@@ -2828,6 +3940,9 @@ function init() {
   greet();
   bindNav();
   loadTemplates();
+  // 大屏右上角的本地时钟：每秒刷新一次，元素隐藏时写入成本可忽略
+  _opsTick();
+  setInterval(_opsTick, 1000);
   document.getElementById('chatInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendChat();
   });
@@ -2852,6 +3967,7 @@ function init() {
   loadKbInfo();
   initLoginLeaves();
   restoreRemembered();
+  setLoginMode('login');   /* 默认登录态：隐藏验证码与姓名字段 */
   /* 以文件方式打开（file://）时给出明确提示 */
   if (location.protocol === 'file:') {
     const w = document.getElementById('lpFileWarn');
@@ -2863,7 +3979,37 @@ function init() {
     if (lp && !lp.classList.contains('hidden')) checkHealth();
   }, 20000);
   checkHealth();
-  refreshUser().then(function () { refreshHome(); loadNotices(); });
+  refreshUser().then(function () { refreshHome(); loadNotices(); applyHashRoute(); });
+}
+
+/* ---------------- 弹窗无障碍（WCAG 2.4.3 焦点顺序 / 2.1.2 键盘可退出） ----------------
+   此前弹窗打开后 Tab 会跑到背后页面上，Esc 也无法关闭。
+   用事件委托统一处理，不必逐个改 10 个 open/close 函数。 */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' && e.key !== 'Esc') return;
+  const open = document.querySelector('.modal.open');
+  if (!open) return;
+  const btn = open.querySelector('.close');
+  if (btn) { btn.click(); e.preventDefault(); }
+});
+document.addEventListener('focusin', function (e) {
+  const open = document.querySelector('.modal.open');
+  if (!open || !e.target || open.contains(e.target)) return;
+  const first = open.querySelector('input:not([type=hidden]),select,textarea,button.close');
+  if (first) first.focus();
+});
+if (typeof MutationObserver !== 'undefined') {
+  const mo = new MutationObserver(function (list) {
+    list.forEach(function (m) {
+      const el = m.target;
+      if (!el.classList || !el.classList.contains('modal') || !el.classList.contains('open')) return;
+      const first = el.querySelector('input:not([type=hidden]),select,textarea,button.close');
+      if (first) setTimeout(function () { try { first.focus(); } catch (err) { /* 元素已关闭 */ } }, 30);
+    });
+  });
+  document.querySelectorAll('.modal').forEach(function (m) {
+    mo.observe(m, { attributes: true, attributeFilter: ['class'] });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

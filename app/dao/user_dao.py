@@ -68,6 +68,21 @@ class UserDAO:
             session.close()
 
     @staticmethod
+    def update_password(user_id: str, password_hash: str) -> None:
+        session = get_session()
+        try:
+            user = session.query(SysUser).filter_by(user_id=user_id).first()
+            if not user:
+                raise ValueError("用户不存在")
+            user.password_hash = password_hash
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    @staticmethod
     def update_last_login(user_id: str) -> None:
         session = get_session()
         try:

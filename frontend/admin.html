@@ -4,12 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>管理后台 · AI智参平台</title>
+<!-- 设计令牌必须先于本页 <style> 加载：本页所有颜色/圆角/阴影都写的是
+     var(--...)，缺了这两个文件变量全部为空，页面会退化成纯文本。 -->
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/visual.css">
 <script src="/assets/api.js"></script>
 <style>
-  :root{
-    --bg:#f4f6f5; --panel:#ffffff; --line:#e3e8e5; --text:#1d2b26; --muted:#6b7d76;
-    --brand:#2f7d67; --brand-soft:#e8f2ee; --warn:#b5721a; --danger:#c0392b; --ok:#2f9e6b;
-  }
+  /* 色彩/间距/字号统一来自 /assets/tokens.css（与主应用同源），
+     本页只保留后台特有的紧凑密度，不再自定义品牌色。 */
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;font-size:14px}
@@ -35,7 +37,7 @@
   a.link{color:var(--brand);text-decoration:none;font-size:13px}
   a.link:hover{text-decoration:underline}
   nav.tabs{background:var(--panel);border-bottom:1px solid var(--line);padding:0 22px;
-    display:flex;gap:2px;position:sticky;top:53px;z-index:5;overflow-x:auto}
+    display:flex;gap:2px;position:sticky;top:var(--header-h,53px);z-index:5;overflow-x:auto}
   nav.tabs button{border:none;background:none;border-radius:0;border-bottom:2px solid transparent;
     padding:11px 15px;color:var(--muted);white-space:nowrap}
   nav.tabs button:hover{color:var(--brand);border-color:transparent}
@@ -85,6 +87,7 @@
   .thr-row .inp input{width:88px;text-align:right;font-variant-numeric:tabular-nums}
   .thr-row .inp .u{color:var(--muted);font-size:12px}
   .thr-row .ds{color:var(--muted);font-size:12px;line-height:1.5}
+  .matrix-wrap{overflow-x:auto}
   .matrix td.ctr,th.ctr{text-align:center}
   .matrix input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--brand)}
   .empty{color:var(--muted);text-align:center;padding:26px 0;font-size:13px}
@@ -104,6 +107,18 @@
     transition:opacity .2s,transform .2s;pointer-events:none;z-index:50;max-width:340px}
   .toast.show{opacity:1;transform:none}
   .toast.bad{background:#8e2a1e}
+
+  /* 响应式：此前后台没有任何断点，900px 以下筛选器换行错位、表格只能横向拖 */
+  @media (max-width:900px){
+    main{padding:14px 14px 32px}
+    header{padding:10px 14px;gap:10px}
+    .grid{grid-template-columns:repeat(2,1fr)}
+    .toolbar{flex-direction:column;align-items:stretch}
+    .toolbar .spacer{display:none}
+    .toolbar input{width:100% !important}
+    #ovTemplates .bar{grid-template-columns:110px 1fr 96px}
+    .thr-row{grid-template-columns:1fr;gap:8px}
+  }
 </style>
 </head>
 <body>
@@ -243,10 +258,12 @@
     <div class="panel">
       <h2>角色 - 权限矩阵 <span class="tag">需求 §3.1 RBAC</span>
         <span class="spacer"></span><button onclick="Admin.loadRoles()">刷新</button></h2>
+      <div class="matrix-wrap">
       <table class="matrix">
         <thead id="roleHead"></thead>
         <tbody id="roleBody"><tr><td class="empty">加载中…</td></tr></tbody>
       </table>
+      </div>
       <div class="foot">调整后整表回写 system_config.role.permissions 并记审计日志（role.update）；改动即时生效，无需发版。</div>
     </div>
   </section>
@@ -715,6 +732,20 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
   } else { boot(); }
+})();
+</script>
+<script>
+/* nav.tabs 的 sticky 偏移必须等于 header 的真实高度。
+   header 是 flex-wrap，窗口一窄就会换行、高度从 53px 变成 90px 以上，
+   原来硬编码 top:53px 会让页签栏盖住正文或留一条缝。 */
+(function () {
+  var h = document.querySelector('header');
+  function sync() {
+    if (h) document.documentElement.style.setProperty('--header-h', h.offsetHeight + 'px');
+  }
+  sync();
+  window.addEventListener('resize', sync);
+  window.addEventListener('load', sync);
 })();
 </script>
 </body>

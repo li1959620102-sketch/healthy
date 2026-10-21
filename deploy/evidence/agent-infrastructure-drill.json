@@ -1,0 +1,40 @@
+{
+  "suite": "agent-infrastructure-drill-v1",
+  "generated_at": 1792311384.3638923,
+  "checks": [
+    {
+      "name": "mysql",
+      "status": "passed",
+      "elapsed_ms": 1318,
+      "detail": {
+        "select_1": 1
+      }
+    },
+    {
+      "name": "redis",
+      "status": "passed",
+      "elapsed_ms": 366,
+      "detail": {
+        "health": "ok"
+      }
+    },
+    {
+      "name": "minio",
+      "status": "passed",
+      "elapsed_ms": 557,
+      "detail": {
+        "bucket": "ai-health-platform"
+      }
+    },
+    {
+      "name": "milvus",
+      "status": "passed",
+      "elapsed_ms": 1589,
+      "detail": {
+        "collection": "ai_health_kb_v1",
+        "exists": true
+      }
+    }
+  ],
+  "passed": true
+}

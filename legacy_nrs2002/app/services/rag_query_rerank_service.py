@@ -597,7 +597,8 @@ NRS2002核心规则（必须严格遵守）：
                             scores.append(score)
                         else:
                             scores.append(0.5)  # 默认分数
-                    except:
+                    except (ValueError, TypeError, AttributeError) as parse_error:
+                        logger.debug("重排分数解析失败，使用默认分数：%s", parse_error)
                         scores.append(0.5)  # 解析失败时的默认分数
                 else:
                     scores.append(0.5)  # 请求失败时的默认分数
@@ -657,7 +658,8 @@ NRS2002核心规则（必须严格遵守）：
                     # 降级到纯BM25检索
                     fallback_docs = self.bm25_retriever.invoke(query)
                     return fallback_docs[:rerank_top_n]
-                except:
+                except Exception as fallback_error:
+                    logger.warning(f"BM25 降级检索失败，使用内置兜底文档：{fallback_error}")
                     # 最终降级方案
                     return [Document(page_content="NRS2002营养风险筛查基础规则", metadata={"source": "fallback"})]
 
@@ -711,7 +713,8 @@ NRS2002核心规则（必须严格遵守）：
             # 降级到混合检索或基础检索
             try:
                 return self.hybrid_search(query, k=rerank_top_n)
-            except:
+            except Exception as fallback_error:
+                logger.warning(f"混合检索降级失败，使用内置兜底文档：{fallback_error}")
                 return [Document(page_content="NRS2002营养风险筛查", metadata={"source": "error_fallback"})]
 
     def hybrid_search(self, query: str, k: int = 5, vector_weight: Optional[float] = None,

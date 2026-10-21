@@ -26,6 +26,7 @@ from app.core.responses import success
 from app.utils.security import decode_token
 from app.utils.db import get_session
 from app.models.mysql.platform import ChatSession, ChatMessage
+from app.agent_runtime.memory import memory_manager
 
 logger = logging.getLogger("chat_router")
 router = APIRouter(prefix="/chat", tags=["智能查询"])
@@ -214,7 +215,13 @@ def _stream_response(question: str, agent: str, user: Optional[dict],
         chunks = []
         refused = False
         reason = ""
-        async for ev in chat_query_service.stream(question, agent, history=history):
+        memory_context = memory_manager.context_text(
+            user_id=str((user or {}).get("sub")) if user else None,
+            agent_key=agent,
+            limit=8,
+        )
+        async for ev in chat_query_service.stream(
+                question, agent, history=history, memory_context=memory_context):
             if ev["event"] == "start":
                 ev["data"] = dict(ev["data"] or {}, session_id=sid,
                                   has_history=bool(history), human_pending=human_pending)
@@ -225,6 +232,14 @@ def _stream_response(question: str, agent: str, user: Optional[dict],
                 chunks.append(ev["data"].get("text", ""))
             yield _sse(ev["event"], ev["data"])
         _persist(sid, user, guest_hash, question, chunks, refused, reason)
+        if user and chunks and not refused:
+            memory_manager.remember(
+                agent, "conversation",
+                {"session_id": sid, "question": question[:500],
+                 "answer_preview": "".join(chunks)[:1000]},
+                user_id=str(user.get("sub")), task_id=None,
+                source="chat_session", ttl_seconds=30 * 24 * 3600,
+            )
 
     return StreamingResponse(
         event_gen(),

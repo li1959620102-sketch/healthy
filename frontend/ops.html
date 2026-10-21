@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>运维监控 · AI智参平台</title>
+<!-- 设计令牌必须先于本页 <style> 加载：本页所有颜色/圆角/阴影都写的是
+     var(--...)，缺了这两个文件变量全部为空，页面会退化成纯文本。 -->
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/visual.css">
 <style>
-  :root{
-    --bg:#f4f6f5; --panel:#ffffff; --line:#e3e8e5; --text:#1d2b26; --muted:#6b7d76;
-    --brand:#2f7d67; --brand-soft:#e8f2ee; --warn:#b5721a; --danger:#c0392b; --ok:#2f9e6b;
-  }
+  /* 色彩/间距/字号统一来自 /assets/tokens.css（与主应用同源），
+     本页只保留后台特有的紧凑密度，不再自定义品牌色。 */
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;font-size:14px}
@@ -54,7 +56,7 @@
   .chips{display:flex;flex-wrap:wrap;gap:8px}
   .chip{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px}
   .chip b{color:var(--danger)}
-  .deps{display:flex;gap:10px;flex-wrap:wrap}
+  .deps{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
   .dep{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);
     border-radius:10px;padding:8px 12px;font-size:13px}
   .dot{width:9px;height:9px;border-radius:50%;background:#c9d3cf}

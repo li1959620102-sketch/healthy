@@ -105,6 +105,12 @@ class EmailSendReq(BaseModel):
         return r.value
 
 
+class PasswordResetReq(BaseModel):
+    identifier: str = Field(..., min_length=5, description="手机号或邮箱")
+    verify_code: str = Field(..., min_length=4, max_length=8, description="短信或邮箱验证码")
+    new_password: str = Field(..., min_length=rules.PASSWORD_MIN_LEN, max_length=rules.PASSWORD_MAX_LEN, description="新密码")
+
+
 class TokenResp(BaseModel):
     access_token: str = Field(..., description="访问令牌")
     refresh_token: str = Field(..., description="刷新令牌")

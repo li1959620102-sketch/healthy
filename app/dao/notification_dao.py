@@ -105,3 +105,25 @@ class NotificationDAO:
         finally:
             if own:
                 s.close()
+
+    @staticmethod
+    def delete_owned(user_id: str, notification_id: int, session=None) -> bool:
+        """删除由 Agent 发送且仍归属该用户的通知，用于补偿事务。"""
+        own = session is None
+        s = session or get_session()
+        try:
+            row = (s.query(Notification)
+                   .filter_by(id=notification_id, user_id=str(user_id)).first())
+            if not row:
+                return False
+            s.delete(row)
+            if own:
+                s.commit()
+            return True
+        except SQLAlchemyError:
+            if own:
+                s.rollback()
+            raise
+        finally:
+            if own:
+                s.close()

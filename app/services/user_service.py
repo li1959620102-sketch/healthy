@@ -167,6 +167,37 @@ class UserService:
         return data
 
     @staticmethod
+    def reset_password(identifier: str, verify_code: str, new_password: str) -> dict:
+        """通过已验证的手机号或邮箱验证码重置密码。"""
+        ident = (identifier or '').strip()
+        rule = rules.check_password(new_password)
+        if not rule.ok:
+            raise ValidationException(rule.message)
+        if not verify_code:
+            raise ValidationException("请输入验证码")
+        if '@' in ident:
+            norm = rules.normalize_email(ident)
+            if not rules.check_email(norm).ok:
+                raise ValidationException("邮箱格式不正确")
+            user = UserDAO.get_by_email_hash(email_hash(norm))
+            if not user:
+                raise AuthenticationException("该邮箱尚未注册")
+            from app.services.email_code_service import email_code_service
+            email_code_service.verify_code(norm, verify_code)
+        else:
+            phone_rule = rules.check_phone(ident)
+            if not phone_rule.ok:
+                raise ValidationException(phone_rule.message)
+            user = UserDAO.get_by_phone_hash(phone_hash(ident))
+            if not user:
+                raise AuthenticationException("该手机号尚未注册")
+            from app.services.sms_service import sms_service
+            sms_service.verify_code(ident, verify_code)
+        UserDAO.update_password(user.user_id, hash_password(new_password))
+        logger.info("用户密码已通过验证渠道重置：%s", user.user_id)
+        return {"user_id": user.user_id, "reset": True}
+
+    @staticmethod
     def login(username: str = "", password: str = "", phone: str = "", email: str = "") -> dict:
         """登录：三通道 —— 账号 / 手机号 / 邮箱（按此优先级取第一个非空值）。
 

@@ -44,6 +44,23 @@ build/
 *.bin
 *.fsm
 *.onnx
+# ASR 权重目录：486MB，用 scripts/download_asr_model.py 现下，绝不入库
+models/
+# 手工下载的 wheel（弱网下用 curl 取的安装包）
+_wheels/
+# 评测用样本与产物（舌象样图、合成音频、评测 JSON）
+_testdata/
+_tongue_eval.json
+# 任何临时备份
+*.bak.*
+*.bak_[0-9]*
+
+# ---------- 临时产物（截图 / 前端备份 / junit / 个人材料，不入库）----------
+_shots/
+_frontend_backup_*/
+_p2_final.xml
+# 简历等个人材料：含手机号与邮箱，绝不入库
+_resume_dump.txt
 
 # ---------- 编辑器 / 系统 ----------
 .idea/

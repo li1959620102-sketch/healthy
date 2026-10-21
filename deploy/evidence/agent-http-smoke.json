@@ -1,0 +1,50 @@
+{
+  "suite": "agent-http-smoke-v1",
+  "base_url": "http://127.0.0.1:8021",
+  "generated_at": 1792311416.8729706,
+  "checks": [
+    {
+      "name": "health",
+      "status": "passed",
+      "elapsed_ms": 413,
+      "response": {
+        "status": "ok",
+        "service": "AI智参（药食同源）健康平台"
+      }
+    },
+    {
+      "name": "ready",
+      "status": "passed",
+      "elapsed_ms": 380,
+      "response": {
+        "code": 0,
+        "message": "success",
+        "data": {
+          "ready": true,
+          "checks": {
+            "mysql": "ok",
+            "milvus": "ok",
+            "redis": "ok",
+            "minio": "ok"
+          },
+          "agent": {
+            "state": "warm",
+            "collection": "ai_health_kb_v1"
+          },
+          "asr": {
+            "installed": false,
+            "ready": false,
+            "loaded": false,
+            "model": "small",
+            "device": "cpu",
+            "compute_type": "int8",
+            "load_error": null
+          }
+        },
+        "request_id": "bbfdc465aacc436b",
+        "page": null
+      }
+    }
+  ],
+  "passed": true
+}

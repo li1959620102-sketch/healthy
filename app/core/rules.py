@@ -645,3 +645,128 @@ def offset_of(page: Any, page_size: Any, max_size: int = PAGE_SIZE_MAX) -> Tuple
     """返回 (page, size, offset)，供 DAO 直接使用。"""
     p, s = normalize_paging(page, page_size, max_size)
     return p, s, (p - 1) * s
+
+
+# --------------------------------------------------------------------------- #
+# 舌象辨识（O 组）· 枚举白名单与置信度门槛
+#
+# 视觉模型只负责「看到什么」，不负责「说明什么问题」。因此这里定的是
+# **可观察特征的枚举**，不是证型/体质结论。模型输出落到枚举外的值一律
+# 归一成「无法判断」——抗幻觉靠代码兜底，不靠模型自觉。
+# --------------------------------------------------------------------------- #
+TONGUE_UNKNOWN = "无法判断"
+
+TONGUE_FEATURE_ENUMS: Dict[str, List[str]] = {
+    # 舌质颜色
+    "tongue_color": ["淡红", "淡白", "红", "深红", "紫暗", "青紫", TONGUE_UNKNOWN],
+    # 舌苔颜色
+    "coating_color": ["白", "黄", "灰黑", "无苔", TONGUE_UNKNOWN],
+    # 舌苔厚薄
+    "coating_thickness": ["薄", "厚", "无苔", TONGUE_UNKNOWN],
+    # 润燥
+    "moisture": ["润", "偏干", "水滑", TONGUE_UNKNOWN],
+    # 舌体形态
+    "tongue_shape": ["正常", "胖大", "瘦薄", TONGUE_UNKNOWN],
+    # 齿痕 / 裂纹 / 瘀点：有 / 无 / 无法判断
+    "teeth_marks": ["有", "无", TONGUE_UNKNOWN],
+    "cracks": ["有", "无", TONGUE_UNKNOWN],
+    "spots": ["有", "无", TONGUE_UNKNOWN],
+}
+
+# 模型自评置信度低于此值 → 视为「看得不够清楚」，质量判定为不充分
+TONGUE_MIN_CONFIDENCE = 0.55
+# 舌图长边压到多少像素再送模型：原图直传会把单张耗时推到分钟级
+TONGUE_IMAGE_MAX_SIDE = 768
+# 单张图字节上限（压缩前，超出直接拒绝，避免把大文件读进内存）
+TONGUE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def check_tongue_image(filename: Optional[str], size: int) -> CheckResult:
+    """上传前校验：格式与大小。"""
+    name = (filename or "").lower()
+    if not name:
+        return _err("请选择舌象图片")
+    if not name.endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
+        return _err("仅支持 JPG / PNG / WEBP / BMP 格式的图片")
+    if size <= 0:
+        return _err("图片内容为空")
+    if size > TONGUE_IMAGE_MAX_BYTES:
+        return _err("图片不能超过 8MB，请压缩后重试")
+    return _ok(size)
+
+
+def normalize_tongue_features(raw: Any) -> Tuple[Dict[str, str], List[str]]:
+    """把模型吐出的特征值收敛到白名单。
+
+    返回 (归一后的特征, 被纠正的字段说明)。第二项用于如实上报
+    「模型给了什么值、我们改成了什么」，而不是悄悄替换掉。
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    out: Dict[str, str] = {}
+    corrected: List[str] = []
+    for key, allowed in TONGUE_FEATURE_ENUMS.items():
+        val = raw.get(key)
+        val = str(val).strip() if val is not None else ""
+        if val in allowed:
+            out[key] = val
+            continue
+        out[key] = TONGUE_UNKNOWN
+        if val:
+            corrected.append(f"{key}: 模型输出「{val}」不在可枚举范围内，已归一为「{TONGUE_UNKNOWN}」")
+    return out, corrected
+
+
+def reconcile_tongue_features(features: Dict[str, str]) -> Tuple[Dict[str, str], List[str]]:
+    """舌象特征自洽校验：消掉字段之间的逻辑矛盾。
+
+    实测 qwen2.5vl 会同时给出「舌苔颜色=无苔」和「舌苔厚薄=薄」——
+    无苔就谈不上厚薄，这在语义上不成立。留着会让前端显示出自相矛盾的报告，
+    比给「无法判断」更糟（用户会以为系统坏了）。
+
+    规则只有两条，都朝"更保守"的方向收敛：
+      1. 厚薄为「无苔」→ 颜色必须是「无苔」（没有苔就没有苔色）；
+      2. 颜色为「无苔」而厚薄给了薄/厚 → 厚薄改「无法判断」（保留"看到无苔"这个观察）。
+
+    返回 (修正后特征, 修正说明)，说明用于如实上报改了什么。
+    """
+    out = dict(features or {})
+    fixed: List[str] = []
+    color = out.get("coating_color")
+    thick = out.get("coating_thickness")
+
+    if thick == "无苔" and color != "无苔":
+        out["coating_color"] = "无苔"
+        fixed.append(f"舌苔厚薄=无苔，颜色「{color}」与之矛盾，已统一为「无苔」")
+    elif color == "无苔" and thick in ("薄", "厚"):
+        out["coating_thickness"] = TONGUE_UNKNOWN
+        fixed.append(f"舌苔颜色=无苔，厚薄却为「{thick}」，已将该字段置为「{TONGUE_UNKNOWN}」")
+    return out, fixed
+
+
+# --------------------------------------------------------------------------- #
+# 子智能体 self-RAG 检索质量门槛（LangGraph 子图用）
+#
+# 营养问答的答案质量取决于检索到的依据。检索不到就生成，等于让模型凭记忆编。
+# 所以子图里放了一个循环：检索 → 评估质量 → 不达标就改写查询重检 → 仍不达标就拒答。
+# 这两个常量就是循环的边界。
+# --------------------------------------------------------------------------- #
+SELFRAG_MAX_ATTEMPTS = 2       # 最多检索 2 次（首检 + 1 次改写重检）
+SELFRAG_MIN_DOCS = 1           # 至少要命中 1 条过阈值的片段
+SELFRAG_MIN_TOP_SCORE = 0.55   # 最高分不得低于此值（与 KB_MIN_SIMILARITY 同口径）
+
+# 查询改写时要剥掉的口语填充词：用户问"高血压的人平时吃啥比较好"，
+# 检索词里"的人""平时""比较好"只会稀释向量，去掉后召回更准。
+QUERY_STOPWORDS = {
+    "的人", "平时", "比较", "好点", "怎么样", "怎么办", "可以吗", "能不能",
+    "应该", "什么", "哪些", "怎么", "如何", "为什么", "是不是", "有没有",
+    "请问", "我想", "知道", "一下", "这个", "那个", "我们", "你们", "他们",
+    "一些", "有点", "稍微", "还是", "然后", "就是", "这样", "那样",
+}
+
+# --------------------------------------------------------------------------- #
+# 数字人语音播报（TTS）
+#
+# 播报的定位是"把结论念一遍"，不是"把全文读出来"。超过这个长度就截断并标记
+# `truncated=true`：合成时间是线性的，读三分钟没人会听，还会把前端按钮一直占着。
+# --------------------------------------------------------------------------- #
+TTS_MAX_CHARS = 500

@@ -25,7 +25,8 @@ logging.basicConfig(level=logging.INFO)
 # 1. 配置常量（与业务对齐）
 # --------------------------
 RAG_CONFIG = {
-    "milvus_uri": settings.MILVUS_URI,
+    "milvus_host": settings.MILVUS_HOST,
+    "milvus_port": settings.MILVUS_PORT,
     "milvus_token": None,
     "embedding_model": settings.EMBEDDING_MODEL,
     "llm_model": settings.LLM_MODEL,

@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_DEFAULT_TIMEOUT: ${PIP_DEFAULT_TIMEOUT:-120}
     image: ai-health-api:${APP_VERSION:-local}
     restart: unless-stopped
     read_only: true
@@ -10,6 +13,7 @@ services:
       - /tmp:size=256m,mode=1777
     volumes:
       - media-data:/app/media
+      - ${ASR_MODEL_HOST_PATH:-./models/whisper}:/app/models/whisper:ro
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     environment:
@@ -31,7 +35,44 @@ services:
       SILICON_FLOW_BASE_URL: ${SILICON_FLOW_BASE_URL:-https://api.siliconflow.cn/v1}
       SILICON_FLOW_LLM_MODEL: ${SILICON_FLOW_LLM_MODEL:-deepseek-ai/DeepSeek-R1}
       SILICON_FLOW_EMBEDDING_MODEL: ${SILICON_FLOW_EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5}
+      VISION_ENABLE: ${VISION_ENABLE:-true}
+      VISION_MODEL: ${VISION_MODEL:-qwen2.5vl:3b}
+      VISION_TIMEOUT: ${VISION_TIMEOUT:-180}
+      ASR_MODEL: ${ASR_MODEL:-small}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
+      ASR_BEAM_SIZE: ${ASR_BEAM_SIZE:-1}
+      ASR_MODEL_DIR: ${ASR_MODEL_DIR:-/app/models/whisper}
+      ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-120}
+      SCHEDULER_ENABLE: ${SCHEDULER_ENABLE:-true}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Shanghai}
+      DELETION_PURGE_HOUR: ${DELETION_PURGE_HOUR:-3}
+      ALERT_EVAL_MINUTES: ${ALERT_EVAL_MINUTES:-60}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      APP_VERSION: ${APP_VERSION:-local}
+      APP_BUILD: ${APP_BUILD:-local}
+      AGENT_COST_BUDGET_USD: ${AGENT_COST_BUDGET_USD:?必须设置 Agent 单任务成本预算}
+      AGENT_SANDBOX_MAX_TOOL_CALLS: ${AGENT_SANDBOX_MAX_TOOL_CALLS:-100}
+      AGENT_SANDBOX_MAX_RUNTIME_SECONDS: ${AGENT_SANDBOX_MAX_RUNTIME_SECONDS:-900}
+      SMS_PROVIDER: ${SMS_PROVIDER:-tencent}
+      SMS_SECRET_ID: ${SMS_SECRET_ID:?必须设置短信SECRET_ID}
+      SMS_SECRET_KEY: ${SMS_SECRET_KEY:?必须设置短信SECRET_KEY}
+      SMS_SDK_APP_ID: ${SMS_SDK_APP_ID:?必须设置短信应用ID}
+      SMS_SIGN_NAME: ${SMS_SIGN_NAME:?必须设置短信签名}
+      SMS_TEMPLATE_ID: ${SMS_TEMPLATE_ID:?必须设置短信模板ID}
+      SMS_CODE_TTL: ${SMS_CODE_TTL:-300}
+      SMS_RESEND_INTERVAL: ${SMS_RESEND_INTERVAL:-60}
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-smtp}
+      MAIL_HOST: ${MAIL_HOST:?必须设置SMTP主机}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USER: ${MAIL_USER:?必须设置SMTP账号}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?必须设置SMTP密码}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_USE_SSL: ${MAIL_USE_SSL:-true}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-false}
+      MAIL_TIMEOUT: ${MAIL_TIMEOUT:-10}
       SMS_DEMO_MODE: "false"
+      MAIL_DEMO_MODE: "false"
       INIT_DEMO_USER: "false"
     security_opt:
       - no-new-privileges:true

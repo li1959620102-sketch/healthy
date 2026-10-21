@@ -51,8 +51,8 @@ class DifyUniversalClient:
                 if 'app_type' in data:
                     return data['app_type']
                 # 其他判断逻辑...
-        except:
-            pass
+        except requests.RequestException as e:
+            self.logger.debug("检测 Dify 应用类型失败，使用 chat 默认值：%s", e)
 
         # 默认返回 chat，因为大多数应用是聊天类型
         return "chat"
@@ -161,7 +161,8 @@ class DifyUniversalClient:
             try:
                 error_detail = response.json()
                 return {"status": "error", "message": error_msg, "detail": error_detail}
-            except:
+            except (ValueError, TypeError) as parse_error:
+                self.logger.debug("Dify 错误响应不是 JSON：%s", parse_error)
                 return {"status": "error", "message": error_msg, "detail": response.text}
         except Exception as e:
             error_msg = f"请求失败：{str(e)}"

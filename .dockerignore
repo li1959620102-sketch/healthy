@@ -8,7 +8,6 @@ __pycache__
 chroma.sqlite3
 downloads
 knowledge_base
-frontend
 prototype
 tests
 _e2e_*.py

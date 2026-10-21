@@ -281,8 +281,15 @@ def test_agent_monitor_and_digital_human_stub(client, auth_factory, run_id):
     cfg = client.get("/api/v1/digital-human/config", headers=headers).json()
     assert cfg["code"] == 0, cfg
     assert cfg["data"]["capabilities"]["text_chat"] is True
-    assert cfg["data"]["capabilities"]["asr"] is False   # 语音待 S5
+    # ASR 能力是**动态**的，不能写死真假：
+    # 2026-10-17 前这里是 `asr is False`（语音待 S5 留桩）；
+    # 现在 faster-whisper + 本地权重已就位，写死 False 会变成"功能做好了、
+    # 测试却逼着它返回不可用"。所以改成断言"与真实探测结果一致"。
+    from app.services.asr_service import asr_service
+    assert cfg["data"]["capabilities"]["asr"] == asr_service.status()["ready"], cfg["data"]
     assert cfg["data"]["chat_endpoint"] == "/api/v1/chat/query"
+    # 语音端点必须存在且是本地推理，不能悄悄退回云端
+    assert cfg["data"]["asr_endpoint"] == "/api/v1/digital-human/asr", cfg["data"]
 
     voice = client.post("/api/v1/digital-human/voice-command", headers=headers, json={}).json()
     assert voice["code"] == 0, voice

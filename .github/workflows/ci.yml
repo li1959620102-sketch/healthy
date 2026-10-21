@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install production dependencies
+        run: python -m pip install --upgrade pip && python -m pip install --requirement requirements-prod.txt pytest
+      - name: Compile Python sources
+        run: python -m compileall -q app main.py scripts
+      - name: Validate production compose
+        env:
+          SECRET_KEY: ci-test-secret-key-0123456789-abcdef
+          CORS_ORIGINS: https://ci.example.test
+          MYSQL_URI: mysql+pymysql://ci:ci@127.0.0.1/ci
+          REDIS_URL: redis://127.0.0.1:6379/0
+          MINIO_ENDPOINT: 127.0.0.1:9000
+          MINIO_ACCESS_KEY: ci-access
+          MINIO_SECRET_KEY: ci-secret
+          MILVUS_HOST: 127.0.0.1
+          SILICON_FLOW_API_KEY: ci-placeholder
+          SMS_SECRET_ID: ci-sms-id
+          SMS_SECRET_KEY: ci-sms-key
+          SMS_SDK_APP_ID: ci-sms-app
+          SMS_SIGN_NAME: ci-sign
+          SMS_TEMPLATE_ID: ci-template
+          MAIL_HOST: smtp.ci.example
+          MAIL_USER: ci@example.test
+          MAIL_PASSWORD: ci-mail-password
+          AGENT_COST_BUDGET_USD: "1.00"
+        run: docker compose -f docker-compose.production.yml config --quiet
+      - name: Run unit tests
+        run: python -m pytest tests/unit -q
+
+  staging-smoke:
+    if: ${{ vars.STAGING_BASE_URL != '' }}
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install smoke dependencies
+        run: python -m pip install requests pytest
+      - name: Run staging smoke tests
+        env:
+          SMOKE_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+        run: python -m pytest tests/smoke -q
