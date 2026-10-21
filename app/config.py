@@ -59,7 +59,7 @@ class Settings:
     MYSQL_DB: str = os.getenv("MYSQL_DB")
     MYSQL_URI = os.getenv("MYSQL_URI")
 
-    MILVUS_HOST: str = os.getenv("MILVUS_HOST", "127.0.0.1")  # 2026-09-12：默认本机（原 192.168.128.210 已失联）
+    MILVUS_HOST: str = os.getenv("MILVUS_HOST", "127.0.0.1")  # 2026-09-12：默认本机（原内网地址已失联）
     MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
     MILVUS_DEFAULT_COLLECTION: str = os.getenv("MILVUS_DEFAULT_COLLECTION", "ai_health_kb_v1")
     MILVUS_DEFAULT_ALIAS: str = os.getenv("MILVUS_DEFAULT_ALIAS", "default")

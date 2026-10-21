@@ -403,7 +403,7 @@ ON DUPLICATE KEY UPDATE config_value=VALUES(config_value);
 
 | 现象 | 真相 |
 | --- | --- |
-| Redis「能握手但不回应」 | Docker 端口转发器（`com.docker.backend` PID 14252）在容器停止后仍占 `0.0.0.0:6379`，TCP 握手后立即 FIN；且 `.env` 的 `REDIS_URL` 指向不可达的 `10.10.10.243:6379` |
+| Redis「能握手但不回应」 | Docker 端口转发器（`com.docker.backend` PID 14252）在容器停止后仍占 `0.0.0.0:6379`，TCP 握手后立即 FIN；且 `.env` 的 `REDIS_URL` 指向不可达的 `<redis-host>:6379` |
 | MinIO「未启动」 | `9100` 上其实是 **Milvus 内部对象存储**（`milvus-minio`），不是应用专用 MinIO；混用会与 Milvus 段数据同生共死 |
 
 ### 7.7.2 专属容器（compose 纳管）
