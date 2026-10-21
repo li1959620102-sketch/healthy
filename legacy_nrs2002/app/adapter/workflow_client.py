@@ -20,7 +20,6 @@ def execute_workflow(params: str):
 
     # 检查环境变量
     api_key = os.getenv("DIFY_API_KEY")
-    # api_key = "app-IJVbQMi7UZvewmGNVDGBftWP"
     base_url = os.getenv("DIFY_BASE_URL")
 
     if not api_key:

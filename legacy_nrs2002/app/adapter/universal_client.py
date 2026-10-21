@@ -14,8 +14,9 @@ class DifyUniversalClient:
     """通用 Dify 客户端，支持聊天应用和工作流应用"""
 
     def __init__(self, api_key: str = None, base_url: str = None):
-        self.api_key = api_key or os.getenv("DIFY_API_KEY","app-pk4PMDFLl0WJpAwMWZASM88q")
-        self.base_url = base_url or os.getenv("DIFY_BASE_URL", "http://120.79.169.112:18001")
+        # 密钥与地址一律从环境变量读取，不设内置默认值，避免随源码外泄
+        self.api_key = api_key or os.getenv("DIFY_API_KEY", "")
+        self.base_url = base_url or os.getenv("DIFY_BASE_URL", "")
 
         if not self.api_key:
             raise ValueError("Dify API密钥未提供")
